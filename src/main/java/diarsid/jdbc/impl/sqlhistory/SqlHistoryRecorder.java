@@ -5,13 +5,15 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import diarsid.jdbc.api.SqlHistory;
 import diarsid.support.objects.PooledReusable;
 
 import static java.util.Arrays.asList;
 import static java.util.Objects.nonNull;
+import static java.util.stream.Collectors.joining;
+import static java.util.stream.Collectors.toList;
 
 import static diarsid.jdbc.api.SqlHistory.Query.ArgsType.ARRAY;
 import static diarsid.jdbc.api.SqlHistory.Query.ArgsType.LIST;
@@ -228,8 +230,30 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
 
     @Override
     public void add(String message) {
+        message = toSqlCommentLine(message);
         Record comment = new SqlHistoryComment(this.records.size(), message);
         this.records.add(comment);
+    }
+
+    @Override
+    public void add(List<String> messageLines) {
+        String commentLines = messageLines
+                .stream()
+                .map(SqlHistoryRecorder::toSqlCommentLine)
+                .collect(joining());
+        Record comment = new SqlHistoryComment(this.records.size(), commentLines);
+        this.records.add(comment);
+    }
+
+    private static String toSqlCommentLine(String line) {
+        line = line.trim().strip();
+        if ( ! line.startsWith("--") ) {
+            line = "-- " + line;
+        }
+        if ( ! line.endsWith("\n") ) {
+            line = line + " \n";
+        }
+        return line;
     }
 
     @Override
@@ -367,6 +391,20 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
                 // TODO
             }
         }
+    }
+
+    @Override
+    public int comment(String commentString) {
+        this.add(commentString);
+        int index = this.records.size() - 1;
+        return index;
+    }
+
+    @Override
+    public int comment(List<String> commentStrings) {
+        this.add(commentStrings);
+        int index = this.records.size() - 1;
+        return index;
     }
 
     @Override

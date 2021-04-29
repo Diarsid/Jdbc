@@ -6,6 +6,8 @@ public interface SqlHistoryRecording {
 
     void add(String message);
 
+    void add(List<String> messageLines);
+
     void add(String sql, long millis);
 
     void add(String sql, List args, long millis);

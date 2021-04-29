@@ -5,6 +5,8 @@ import java.util.function.Consumer;
 
 import diarsid.support.objects.CommonEnum;
 
+import static java.util.Arrays.asList;
+
 import static diarsid.jdbc.api.SqlHistory.Query.ArgsType.NONE;
 
 public interface SqlHistory {
@@ -69,4 +71,12 @@ public interface SqlHistory {
     boolean hasUnreported();
 
     void forEach(Consumer<Record> recordConsumer);
+
+    int comment(String comment);
+
+    int comment(List<String> comment);
+
+    default int comment(String... comment) {
+        return this.comment(asList(comment));
+    }
 }
