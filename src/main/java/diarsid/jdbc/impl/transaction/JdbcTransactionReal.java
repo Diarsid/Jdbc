@@ -236,7 +236,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
     public State state() {
         return this.state;
     }
-    
+
+    @Override
+    public void doNotGuard() {
+        if ( this.delayedTearDownCancel != null ) {
+            this.delayedTearDownCancel.run();
+        }
+    }
+
     private void restoreAutoCommit() {
         try {
             this.connection.setAutoCommit(true);

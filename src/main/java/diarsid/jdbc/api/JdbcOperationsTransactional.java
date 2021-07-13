@@ -12,4 +12,6 @@ public interface JdbcOperationsTransactional extends JdbcOperations {
     SqlHistory sqlHistory();
 
     JdbcTransaction.State state();
+
+    void doNotGuard();
 }

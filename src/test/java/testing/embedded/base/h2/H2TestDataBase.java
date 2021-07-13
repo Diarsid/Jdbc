@@ -17,11 +17,6 @@ import org.slf4j.LoggerFactory;
 
 import static java.lang.String.format;
 
-
-/**
- *
- * @author Diarsid
- */
 public class H2TestDataBase implements TestDataBase {
     
     private static final Logger logger = LoggerFactory.getLogger(H2TestDataBase.class);

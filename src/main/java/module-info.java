@@ -1,7 +1,7 @@
 module diarsid.jdbc {
 
     requires java.sql;
-    requires slf4j.api;
+    requires org.slf4j;
     requires diarsid.support;
 
     exports diarsid.jdbc.api;
