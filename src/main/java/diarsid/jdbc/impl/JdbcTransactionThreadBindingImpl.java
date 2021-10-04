@@ -75,6 +75,11 @@ public class JdbcTransactionThreadBindingImpl implements JdbcTransactionThreadBi
     }
 
     @Override
+    public void bindExisting(JdbcTransaction transaction) {
+        threadJdbcTransactions.set((JdbcTransactionReal) transaction);
+    }
+
+    @Override
     public boolean isBound() {
         return nonNull(threadJdbcTransactions.get());
     }

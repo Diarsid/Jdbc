@@ -80,11 +80,19 @@ public class JdbcImpl implements Jdbc {
         }
 
         try {
-            return this.createNewTransaction();
+            JdbcTransaction tx = this.createNewTransaction();
+            this.threadBinding.bindExisting(tx);
+            this.setUnbindOnClose(tx);
+            return tx;
         } catch (SQLException e) {
             logger.error("SQLException occured during JDBC Connection obtaining: ", e);
             throw new JdbcException(e);
         }
+    }
+
+    private void setUnbindOnClose(JdbcTransaction transaction) {
+        JdbcTransactionReal real = (JdbcTransactionReal) transaction;
+        real.onCloseCallback = this.threadBinding::unbind;
     }
 
     @Override

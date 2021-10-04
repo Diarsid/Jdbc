@@ -144,6 +144,8 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
     private State state;
     private Runnable delayedTearDownCancel;
 
+    public Runnable onCloseCallback;
+
     public JdbcTransactionReal(
             Connection connection,
             JdbcPreparedStatementSetter argsSetter,
@@ -273,9 +275,6 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             if ( ! this.connection.isClosed() ) {
                 this.connection.close();
             }
-            if ( nonNull(this.delayedTearDownCancel) ) {
-                this.delayedTearDownCancel.run();
-            }
         }
         catch (Exception e) {
             this.fail();
@@ -284,6 +283,26 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                     "It is impossible to close the database connection. " +
                     "Program will be closed");
         }
+        finally {
+            try {
+                if ( nonNull(this.delayedTearDownCancel) ) {
+                    this.delayedTearDownCancel.run();
+                }
+            }
+            catch (Exception e) {
+                logger.error("cannot cancel delayed teardown: ", e);
+            }
+
+            if ( nonNull(this.onCloseCallback) ) {
+                try {
+                    this.onCloseCallback.run();
+                }
+                catch (Exception e) {
+                    logger.error("cannot run on-close-callback: ", e);
+                }
+            }
+        }
+
     }
     
     @Override
