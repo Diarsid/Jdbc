@@ -19,6 +19,7 @@ public interface RowGetter<T> extends Function<Row, T> {
 
     @Override
     default T apply(Row row) {
+
         return this.getFrom(row);
     }
 }

@@ -54,6 +54,10 @@ public interface SqlHistory {
 
         List argsAsList();
 
+        boolean hasComment();
+
+        List<String> comment();
+
     }
 
     int recordsTotal();

@@ -5,7 +5,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import diarsid.jdbc.api.SqlHistory;
 import diarsid.support.objects.PooledReusable;
@@ -13,7 +12,6 @@ import diarsid.support.objects.PooledReusable;
 import static java.util.Arrays.asList;
 import static java.util.Objects.nonNull;
 import static java.util.stream.Collectors.joining;
-import static java.util.stream.Collectors.toList;
 
 import static diarsid.jdbc.api.SqlHistory.Query.ArgsType.ARRAY;
 import static diarsid.jdbc.api.SqlHistory.Query.ArgsType.LIST;
@@ -34,6 +32,7 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
         private final List argsAsList;
         private final Object[] argsAsArray;
         private final Boolean isBatch;
+        private final List<String> comment;
 
         public SqlHistoryQuery(
                 int index, String query, Long millis) {
@@ -44,6 +43,7 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
             this.argsAsList = null;
             this.argsAsArray = null;
             this.isBatch = false;
+            this.comment = null;
         }
 
         public SqlHistoryQuery(
@@ -55,6 +55,7 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
             this.argsAsList = new ArrayList(argsAsList);
             this.argsAsArray = null;
             this.isBatch = isBatch;
+            this.comment = null;
         }
 
         public SqlHistoryQuery(
@@ -66,6 +67,43 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
             this.argsAsList = null;
             this.argsAsArray = Arrays.copyOf(argsAsArray, argsAsArray.length);
             this.isBatch = isBatch;
+            this.comment = null;
+        }
+
+        public SqlHistoryQuery(
+                int index, String query, Long millis, List<String> comment) {
+            this.index = index;
+            this.query = query;
+            this.millis = millis;
+            this.argsType = NONE;
+            this.argsAsList = null;
+            this.argsAsArray = null;
+            this.isBatch = false;
+            this.comment = comment;
+        }
+
+        public SqlHistoryQuery(
+                int index, String query, Long millis, List argsAsList, Boolean isBatch, List<String> comment) {
+            this.index = index;
+            this.query = query;
+            this.millis = millis;
+            this.argsType = LIST;
+            this.argsAsList = new ArrayList(argsAsList);
+            this.argsAsArray = null;
+            this.isBatch = isBatch;
+            this.comment = comment;
+        }
+
+        public SqlHistoryQuery(
+                int index, String query, Long millis, Object[] argsAsArray, Boolean isBatch, List<String> comment) {
+            this.index = index;
+            this.query = query;
+            this.millis = millis;
+            this.argsType = ARRAY;
+            this.argsAsList = null;
+            this.argsAsArray = Arrays.copyOf(argsAsArray, argsAsArray.length);
+            this.isBatch = isBatch;
+            this.comment = comment;
         }
 
         @Override
@@ -275,8 +313,32 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
     }
 
     @Override
+    public void add(String sql, long millis, List<String> messageLines) {
+        Query query = new SqlHistoryQuery(this.records.size(), sql, millis, messageLines);
+        this.records.add(query);
+    }
+
+    @Override
+    public void add(String sql, List args, long millis, List<String> messageLines) {
+        Query query = new SqlHistoryQuery(this.records.size(), sql, millis, args, false, messageLines);
+        this.records.add(query);
+    }
+
+    @Override
+    public void add(String sql, Object[] args, long millis, List<String> messageLines) {
+        Query query = new SqlHistoryQuery(this.records.size(), sql, millis, args, false, messageLines);
+        this.records.add(query);
+    }
+
+    @Override
     public void addBatch(String sql, List<List> args, long millis) {
         Query query = new SqlHistoryQuery(this.records.size(), sql, millis, args, true);
+        this.records.add(query);
+    }
+
+    @Override
+    public void addBatchMappable(String sql, List<? extends Object> objects, long millis) {
+        Query query = new SqlHistoryQuery(this.records.size(), sql, millis, objects, true);
         this.records.add(query);
     }
 
@@ -332,6 +394,9 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
             switch ( type ) {
                 case QUERY:
                     query = (Query) record;
+                    if ( query.hasComment() ) {
+
+                    }
                     switch ( query.argsType() ) {
                         case LIST:
                             reportMaker.add(query.string(), query.millis(), query.isBatch(), query.argsAsList());

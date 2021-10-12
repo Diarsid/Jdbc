@@ -1,18 +1,9 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package diarsid.jdbc.api.sqltable.rows;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- *
- * @author Diarsid
- */
 public interface Row {
     
     Object get(String columnLabel);

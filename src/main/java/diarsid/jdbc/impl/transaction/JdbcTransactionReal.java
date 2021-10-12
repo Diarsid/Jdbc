@@ -1,7 +1,7 @@
 package diarsid.jdbc.impl.transaction;
 
+import java.io.Closeable;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -34,6 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import static java.lang.String.format;
 import static java.lang.System.currentTimeMillis;
+import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static java.time.LocalDateTime.now;
 import static java.util.Arrays.asList;
 import static java.util.Arrays.stream;
@@ -56,7 +58,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
     
     private static final Logger logger = LoggerFactory.getLogger(JdbcTransactionReal.class);
 
-    private static class RealRow implements Row {
+    private static class RealRow implements Row, Closeable {
 
         private final JdbcTransactionReal tx;
         private ResultSet rs;
@@ -65,8 +67,9 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             this.tx = tx;
         }
 
-        void set(ResultSet rs) {
+        Closeable set(ResultSet rs) {
             this.rs = rs;
+            return this;
         }
 
         void unset() {
@@ -130,6 +133,11 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                 throw new JdbcException(ex);
             }
         }
+
+        @Override
+        public void close() {
+            this.unset();
+        }
     }
     
     private final Connection connection;
@@ -159,12 +167,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.sqlTypeToJavaTypeConverter = sqlTypeToJavaTypeConverter;
         this.sqlHistoryEnabled = sqlHistoryEnabled;
         this.replaceParamsInSqlHistory = replaceParamsInSqlHistory;
+
         if ( this.sqlHistoryEnabled ) {
             this.sqlHistory = new SqlHistoryRecorder(this.uuid, replaceParamsInSqlHistory);
         }
         else {
             this.sqlHistory = null;
         }
+
         this.row = new RealRow(this);
         this.state = OPEN;
     }
@@ -357,12 +367,10 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            Statement statement = this.connection.createStatement();
-            ResultSet resultSet = statement.executeQuery(sql);
+        try (Statement statement = this.connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(sql);) {
+
             int resultingRowsQty = this.count(resultSet);
-            resultSet.close();
-            statement.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -393,13 +401,11 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             ResultSet rs = ps.executeQuery()) {
+
             int resultingRowsQty = this.count(rs);
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -430,13 +436,11 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             ResultSet rs = ps.executeQuery()) {
+
             int resultingRowsQty = this.count(rs);
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -481,17 +485,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub0 = this.paramsSetter.setParameters(ps);
+             var rs = ps.executeQuery();
+             var stub1 = this.row.set(rs)) {
+
             while ( rs.next() ) {
                 operation.process(this.row);
             }
-            this.row.unset();
-            ps.close();
-            rs.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -520,17 +521,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub0 = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             while ( rs.next() ) {
                 operation.process(this.row);
             }
-            this.row.unset();
-            ps.close();
-            rs.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -559,17 +557,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub0 = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs);) {
+
             while ( rs.next() ) {
                 operation.process(this.row);
             }
-            this.row.unset();
-            ps.close();
-            rs.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -598,17 +593,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            Statement st = this.connection.createStatement();
-            ResultSet rs = st.executeQuery(sql);
-            this.row.set(rs);
+        try (Statement st = this.connection.createStatement();
+             ResultSet rs = st.executeQuery(sql);
+             var row = this.row.set(rs)) {
+
             Stream.Builder<T> builder = Stream.builder();
             while ( rs.next() ) {
                 builder.accept(conversion.getFrom(this.row));
             }
-            this.row.unset();
-            st.close();
-            rs.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -639,18 +631,15 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             Stream.Builder<T> builder = Stream.builder();
             while ( rs.next() ) {
                 builder.accept(conversion.getFrom(this.row));
             }
-            this.row.unset();
-            ps.close();
-            rs.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -681,18 +670,15 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             Stream.Builder<T> builder = Stream.builder();
             while ( rs.next() ) {
                 builder.accept(conversion.getFrom(this.row));
             }
-            this.row.unset();
-            ps.close();
-            rs.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -756,17 +742,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             if ( rs.first() ) {
                 operation.process(this.row);
             }
-            this.row.unset();
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -795,17 +778,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             if ( rs.first() ) {
                 operation.process(this.row);
             }
-            this.row.unset();
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -834,17 +814,14 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
-            this.row.set(rs);
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             if ( rs.first() ) {
                 operation.process(this.row);
             }
-            this.row.unset();
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -873,20 +850,17 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps);
-            ResultSet rs = ps.executeQuery();
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             Optional<T> optional;
-            this.row.set(rs);
             if ( rs.first() ) {
                 optional = Optional.ofNullable(conversion.getFrom(this.row));
             } else {
                 optional = empty();
             }
-            this.row.unset();
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -917,20 +891,17 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             Optional<T> optional;
-            this.row.set(rs);
             if ( rs.first() ) {
                 optional = Optional.ofNullable(conversion.getFrom(this.row));
             } else {
                 optional = empty();
             }
-            this.row.unset();
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -961,20 +932,17 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
+        try (var ps = this.connection.prepareStatement(sql);
+             var stub = this.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();
+             var row = this.row.set(rs)) {
+
             Optional<T> optional;
-            this.row.set(rs);
             if ( rs.first() ) {
                 optional = Optional.ofNullable(conversion.getFrom(this.row));
             } else {
                 optional = empty();
             }
-            this.row.unset();
-            rs.close();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -1005,10 +973,9 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            Statement ps = this.connection.createStatement();
-            int x = ps.executeUpdate(updateSql);
-            ps.close();
+        try (var ps = this.connection.prepareStatement(updateSql);) {
+
+            int x = ps.executeUpdate();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -1039,11 +1006,10 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(updateSql);
-            this.paramsSetter.setParameters(ps, params);
+        try (var ps = this.connection.prepareStatement(updateSql);
+             var stub = this.paramsSetter.setParameters(ps, params)) {
+
             int x = ps.executeUpdate();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -1068,17 +1034,16 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             throw new JdbcException(e);
         }
     }
-    
+
     @Override
     public int doUpdate(String updateSql, Object... params) {
         this.mustBeValid();
         long start = currentTimeMillis();
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(updateSql);
-            this.paramsSetter.setParameters(ps, params);
+        try (var ps = this.connection.prepareStatement(updateSql);
+             var stub = this.paramsSetter.setParameters(ps, params);) {
+
             int x = ps.executeUpdate();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -1095,6 +1060,146 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(updateSql, params, millis);
+                this.sqlHistory.add(e);
+            }
+
+            this.fail();
+            this.rollbackAnd(CLOSE);
+            throw new JdbcException(e);
+        }
+    }
+
+    @Override
+    public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType) {
+        this.mustBeValid();
+        long start = currentTimeMillis();
+
+        try (var ps = this.connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS)) {
+
+            ps.executeUpdate();
+
+            List<K> keys = new ArrayList<>();
+            Object unconvertedKey;
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                while ( rs.next() ) {
+                    unconvertedKey = rs.getObject(1);
+                    keys.add(this.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                }
+            }
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+
+                if ( keys.isEmpty() ) {
+                    this.sqlHistory.add(updateSql, millis);
+                }
+                else {
+                    AtomicInteger counter = new AtomicInteger(0);
+                    List<String> keysLines = keys
+                            .stream()
+                            .map(key -> format("   [%s] %s", counter.getAndIncrement(), key))
+                            .collect(toList());
+                    keysLines.add(0, "generated keys:");
+                    this.sqlHistory.add(updateSql, millis, keysLines);
+                }
+            }
+
+            return keys;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.add(updateSql, millis);
+                this.sqlHistory.add(e);
+            }
+
+            this.fail();
+            this.rollbackAnd(CLOSE);
+            throw new JdbcException(e);
+        }
+    }
+
+    @Override
+    public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType, Object... params) {
+        this.mustBeValid();
+        long start = currentTimeMillis();
+
+        try (var ps = this.connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
+             var stub = this.paramsSetter.setParameters(ps, params)) {
+
+            ps.executeUpdate();
+
+            List<K> keys = new ArrayList<>();
+            Object unconvertedKey;
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                while ( rs.next() ) {
+                    unconvertedKey = rs.getObject(1);
+                    keys.add(this.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                }
+            }
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.add(updateSql, millis);
+            }
+
+            return keys;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.add(updateSql, millis);
+                this.sqlHistory.add(e);
+            }
+
+            this.fail();
+            this.rollbackAnd(CLOSE);
+            throw new JdbcException(e);
+        }
+    }
+
+    @Override
+    public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType, List params) {
+        this.mustBeValid();
+        long start = currentTimeMillis();
+
+        try (var ps = this.connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
+             var stub = this.paramsSetter.setParameters(ps, params)) {
+
+            ps.executeUpdate();
+
+            List<K> keys = new ArrayList<>();
+            Object unconvertedKey;
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                while ( rs.next() ) {
+                    unconvertedKey = rs.getObject(1);
+                    keys.add(this.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                }
+            }
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.add(updateSql, millis);
+            }
+
+            return keys;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.add(updateSql, millis);
                 this.sqlHistory.add(e);
             }
 
@@ -1114,14 +1219,13 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
         this.paramsMustHaveEqualQty(batchParams, updateSql);
 
-        try {
-            PreparedStatement ps = this.connection.prepareStatement(updateSql);
+        try (var ps = this.connection.prepareStatement(updateSql)) {
+
             for ( List params : batchParams ) {
                 this.paramsSetter.setParameters(ps, params);
                 ps.addBatch();
             }           
             int[] x = ps.executeBatch();
-            ps.close();
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
@@ -1182,15 +1286,59 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
     }
 
     @Override
-    public <T> int[] doBatchUpdate(String updateSql, ArgsFrom<T> argsFromT, List<T> tObjects) {
-        List<List> args = tObjects.stream().map(argsFromT).collect(toList());
+    public <T> int[] doBatchUpdate(String updateSql, ParamsFrom<T> paramsFromT, List<T> tObjects) {
+        List<List> args = tObjects.stream().map(paramsFromT).collect(toList());
         return this.doBatchUpdate(updateSql, args);
     }
 
     @Override
-    public <T> int[] doBatchUpdate(String updateSql, ArgsFrom<T> argsFromT, T... tObjects) {
-        List<List> args = stream(tObjects).map(argsFromT).collect(toList());
+    public <T> int[] doBatchUpdate(String updateSql, ParamsFrom<T> paramsFromT, T... tObjects) {
+        List<List> args = stream(tObjects).map(paramsFromT).collect(toList());
         return this.doBatchUpdate(updateSql, args);
+    }
+
+    @Override
+    public <T> int[] doBatchUpdate(String updateSql, ParamsApplier<T> paramsFromT, List<T> tObjects) {
+        this.mustBeValid();
+        if ( tObjects.isEmpty() ) {
+            return new int[0];
+        }
+        long start = currentTimeMillis();
+
+        try (var ps = this.connection.prepareStatement(updateSql)) {
+
+            for ( T t : tObjects ) {
+                this.paramsSetter.apply(ps, t, paramsFromT);
+                ps.addBatch();
+            }
+            int[] x = ps.executeBatch();
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.addBatchMappable(updateSql, tObjects, millis);
+            }
+
+            return x;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during batch update: ");
+            logger.error(updateSql);
+            logger.error("...with mappable objects: ");
+            for ( T t : tObjects ) {
+                logger.error(t.toString());
+            }
+            logger.error("", e);
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.addBatchMappable(updateSql, tObjects, millis);
+                this.sqlHistory.add(e);
+            }
+
+            this.fail();
+            this.rollbackAnd(CLOSE);
+            throw new JdbcException(e);
+        }
     }
 
     @Override

@@ -666,14 +666,14 @@ public class JdbcImpl implements Jdbc {
     }
 
     @Override
-    public <T> int[] doBatchUpdate(String updateSql, ArgsFrom<T> argsFromT, List<T> tObjects) {
-        List<List> args = tObjects.stream().map(argsFromT).collect(toList());
+    public <T> int[] doBatchUpdate(String updateSql, ParamsFrom<T> paramsFromT, List<T> tObjects) {
+        List<List> args = tObjects.stream().map(paramsFromT).collect(toList());
         return this.doBatchUpdate(updateSql, args);
     }
 
     @Override
-    public <T> int[] doBatchUpdate(String updateSql, ArgsFrom<T> argsFromT, T... tObjects) {
-        List<List> args = stream(tObjects).map(argsFromT).collect(toList());
+    public <T> int[] doBatchUpdate(String updateSql, ParamsFrom<T> paramsFromT, T... tObjects) {
+        List<List> args = stream(tObjects).map(paramsFromT).collect(toList());
         return this.doBatchUpdate(updateSql, args);
     }
 

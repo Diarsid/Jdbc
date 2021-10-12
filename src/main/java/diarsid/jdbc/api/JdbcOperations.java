@@ -10,7 +10,7 @@ import diarsid.jdbc.api.sqltable.rows.RowOperation;
 
 public interface JdbcOperations {
 
-    interface ArgsFrom<T> extends Function<T, List<Object>> {
+    interface ParamsFrom<T> extends Function<T, List<Object>> {
 
         List<Object> argsFrom(T t);
 
@@ -18,6 +18,14 @@ public interface JdbcOperations {
             return this.argsFrom(t);
         }
 
+    }
+
+    interface Params {
+        void add(Object param);
+    }
+
+    interface ParamsApplier<T> {
+        void apply(T t, Params params);
     }
 
     void doQuery(
@@ -74,6 +82,15 @@ public interface JdbcOperations {
     int doUpdate(
             String updateSql, List params);
 
+    <T> List<T> doUpdateAndGetKeys(
+            String updateSql, Class<T> keyType);
+
+    <T> List<T> doUpdateAndGetKeys(
+            String updateSql, Class<T> keyType, Object... params);
+
+    <T> List<T> doUpdateAndGetKeys(
+            String updateSql, Class<T> keyType, List params);
+
     int[] doBatchUpdate(
             String updateSql, List<List> batchParams);
 
@@ -81,10 +98,13 @@ public interface JdbcOperations {
             String updateSql, List... batchParams);
 
     <T> int[] doBatchUpdate(
-            String updateSql, ArgsFrom<T> argsFromT, List<T> tObjects);
+            String updateSql, ParamsFrom<T> paramsFromT, List<T> tObjects);
 
     <T> int[] doBatchUpdate(
-            String updateSql, ArgsFrom<T> argsFromT, T... tObjects);
+            String updateSql, ParamsFrom<T> paramsFromT, T... tObjects);
+
+    <T> int[] doBatchUpdate(
+            String updateSql, ParamsApplier<T> paramsApplier, List<T> tObjects);
 
     void useJdbcDirectly(JdbcDirectOperation jdbcOperation);
 

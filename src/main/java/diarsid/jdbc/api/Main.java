@@ -1,8 +1,6 @@
 package diarsid.jdbc.api;
 
 import java.util.List;
-import java.util.function.Function;
-import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
@@ -28,7 +26,7 @@ public class Main {
                 new O("three", 3, true)
         );
 
-        JdbcOperations.ArgsFrom<O> oToArgs = o -> List.of(o.string, o.i, o.b);
+        JdbcOperations.ParamsFrom<O> oToArgs = o -> List.of(o.string, o.i, o.b);
 
         List objects = os
                 .stream()

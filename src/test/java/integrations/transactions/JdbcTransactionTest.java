@@ -545,7 +545,7 @@ public class JdbcTransactionTest {
                                 return (int) row.get("index");
                             },
                             "SELECT * " +
-                                    "FROM table_1")
+                            "FROM table_1")
                     .filter(i -> i > 0)
                     .map(i -> String.valueOf(i) + ": index")
                     .collect(toList());

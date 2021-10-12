@@ -1,8 +1,3 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package diarsid.jdbc.impl.conversion.sql2java;
 
 import java.util.HashMap;
@@ -13,14 +8,12 @@ import diarsid.jdbc.api.exceptions.JdbcException;
 import static java.lang.String.format;
 import static java.util.Objects.isNull;
 
-/**
- *
- * @author Diarsid
- */
 public class SqlTypeToJavaTypeConverter {
-    
+
+    @SuppressWarnings("rawtypes")
     private final Map<Class, Map<Class, SqlTypeToJavaTypeConversion>> conversions;
 
+    @SuppressWarnings("rawtypes")
     public SqlTypeToJavaTypeConverter(SqlTypeToJavaTypeConversion... givenConversions) {
         this.conversions = new HashMap<>();
 
@@ -36,14 +29,15 @@ public class SqlTypeToJavaTypeConverter {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    public <T> T convert(Object obj, Class<T> type) {
-        SqlTypeToJavaTypeConversion conversion = this.getConversion(obj.getClass(), type);
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public <J> J convert(Object obj, Class<J> javaType) {
+        SqlTypeToJavaTypeConversion conversion = this.getConversion(obj.getClass(), javaType);
 
-        return (T) conversion.convert(obj);
+        return (J) conversion.convert(obj);
     }
 
-    private SqlTypeToJavaTypeConversion getConversion(Class sqlType, Class javaType) {
+    @SuppressWarnings("rawtypes")
+    public <S, J> SqlTypeToJavaTypeConversion getConversion(Class<S> sqlType, Class<J> javaType) {
         Map<Class, SqlTypeToJavaTypeConversion> sqlTypeConversions = this.conversions.get(javaType);
 
         if ( isNull(sqlTypeConversions) ) {
