@@ -1,9 +1,3 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
-
 package integrations.transactions;
 
 import java.lang.reflect.Method;
@@ -99,6 +93,21 @@ public class JdbcTransactionTest {
     private static final boolean row_1_active = true;
     private static final boolean row_2_active = false;
     private static final boolean row_3_active = true;
+
+    static class Model {
+
+        final int id;
+        final String label;
+        final int index;
+        final boolean active;
+
+        public Model(int id, String label, int index, boolean active) {
+            this.id = id;
+            this.label = label;
+            this.index = index;
+            this.active = active;
+        }
+    }
     
     public JdbcTransactionTest() {
     }
@@ -165,7 +174,7 @@ public class JdbcTransactionTest {
     }
 
     private static void setupTransactionsFactory() {
-        Map<JdbcOption, Object> options = Map.of(TRANSACTION_GUARD_ENABLED, false);
+        Map<JdbcOption, Object> options = Map.of(TRANSACTION_GUARD_ENABLED, true);
         SqlConnectionsSource source = new SqlConnectionsSourceTestBase(TEST_BASE);
         JDBC = Jdbc.init(source, options);
     }
@@ -329,10 +338,6 @@ public class JdbcTransactionTest {
         assertEquals(3, qtyAfter);
     }
 
-    /**
-     * Test of doUpdate method, of class JdbcTransactionWrapper.
-     */
-    // fix!!!1
     @Test()
     public void testDoUpdate_String_asList() throws Exception {
         int qtyBefore = TEST_BASE.countRowsInTable("table_1");
@@ -361,6 +366,34 @@ public class JdbcTransactionTest {
             int qtyAfter = TEST_BASE.countRowsInTable("table_1");
             assertEquals(3, qtyAfter);
         }
+    }
+
+    @Test()
+    public void testDoUpdate_String_paramsMapper() throws Exception {
+        int qtyBefore = TEST_BASE.countRowsInTable("table_1");
+        assertEquals(3, qtyBefore);
+
+        List<Model> models = List.of(
+                new Model(4, "name_4", 40, false),
+                new Model(5, "name_5", 50, false),
+                new Model(6, "name_6", 60, false));
+
+        try (var transaction = createTransaction()) {
+
+            transaction.doBatchUpdate(
+                    TABLE_1_INSERT,
+                    (model, params) -> {
+                        params.addNext(model.id);
+                        params.addNext(model.label);
+                        params.addNext(model.index);
+                        params.addNext(model.active);
+                    },
+                    models);
+        }
+
+        assertTrue(TEST_BASE.ifAllConnectionsReleased());
+        int qtyAfter = TEST_BASE.countRowsInTable("table_1");
+        assertEquals(6, qtyAfter);
     }
     
     @Test()
@@ -572,10 +605,10 @@ public class JdbcTransactionTest {
                                 return (int) row.get("index");
                             },
                             "SELECT * " +
-                                    "FROM table_1 " +
-                                    "WHERE  ( id IS ? ) AND " +
-                                    "       ( label LIKE ? ) AND ( label LIKE ? ) AND ( label LIKE ? ) " +
-                                    "       AND ( active IS ? ) ",
+                            "FROM table_1 " +
+                            "WHERE  ( id IS ? ) AND " +
+                            "       ( label LIKE ? ) AND ( label LIKE ? ) AND ( label LIKE ? ) " +
+                            "       AND ( active IS ? ) ",
                             1, labelPatterns, true)
                     .map(i -> String.valueOf(i) + ": index")
                     .collect(toList());
