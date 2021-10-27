@@ -8,10 +8,8 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
-import diarsid.jdbc.api.JdbcOperations;
 import diarsid.jdbc.api.exceptions.ForbiddenTransactionOperation;
 import diarsid.jdbc.api.exceptions.JdbcPreparedStatementParamsException;
 import diarsid.jdbc.impl.params.ParamSetterBinaryStream;
@@ -29,17 +27,12 @@ import diarsid.jdbc.impl.params.ParamSetterString;
 import diarsid.jdbc.impl.params.ParamSetterUUID;
 import diarsid.support.objects.collections.StreamsSupport;
 
-import static java.lang.String.format;
-import static java.lang.Thread.currentThread;
-import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 import static java.util.stream.Collectors.toList;
 
-public class JdbcPreparedStatementSetter implements JdbcOperations.Params {
+public class JdbcPreparedStatementSetter {
 
     private final List<JdbcPreparedStatementParamSetter> setters;
-    private final ThreadLocal<PreparedStatement> localStatement;
-    private final ThreadLocal<AtomicInteger> localIndex;
     private final int settersQty;
 
     public JdbcPreparedStatementSetter(
@@ -65,9 +58,6 @@ public class JdbcPreparedStatementSetter implements JdbcOperations.Params {
 
         this.setters = new ArrayList<>(defaultSetters);
         this.settersQty = this.setters.size();
-
-        this.localStatement = new ThreadLocal<>();
-        this.localIndex = new ThreadLocal<>();
     }
     
     public Closeable setParameters(PreparedStatement statement, Stream<Object> params) throws SQLException {
@@ -78,38 +68,6 @@ public class JdbcPreparedStatementSetter implements JdbcOperations.Params {
         }
 
         return CloseableStub.INSTANCE;
-    }
-
-    public <T> Closeable apply(PreparedStatement statement, T t, JdbcOperations.ParamsApplier<T> paramsApplier) throws SQLException {
-        this.localStatement.set(statement);
-        this.localIndex.set(new AtomicInteger(1));
-        try {
-            paramsApplier.apply(t, this);
-        }
-        finally {
-            this.localStatement.remove();
-        }
-
-        return CloseableStub.INSTANCE;
-    }
-
-    @Override
-    public void add(Object param) {
-        PreparedStatement ps = this.localStatement.get();
-        int index = this.localIndex.get().getAndIncrement();
-
-        if ( isNull(ps) ) {
-            throw new JdbcPreparedStatementParamsException(
-                    "PreparedStatement is not set for thread  " + currentThread().getName());
-        }
-
-        try {
-            this.findAppropriateSetterFor(param).setParameterInto(ps, index, param);
-        }
-        catch (SQLException e) {
-            throw new JdbcPreparedStatementParamsException(
-                    format("Cannot set %s:%s param into PreparedStatement: %s", index, param, e.getMessage()));
-        }
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1) throws SQLException {
@@ -279,7 +237,7 @@ public class JdbcPreparedStatementSetter implements JdbcOperations.Params {
         return CloseableStub.INSTANCE;
     }
     
-    private JdbcPreparedStatementParamSetter findAppropriateSetterFor(Object obj) {
+    public JdbcPreparedStatementParamSetter findAppropriateSetterFor(Object obj) {
         JdbcPreparedStatementParamSetter setter;
         for ( int i = 0; i < this.settersQty; i++ ) {
             setter = this.setters.get(i);

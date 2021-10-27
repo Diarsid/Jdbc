@@ -20,15 +20,13 @@ import diarsid.jdbc.api.SqlHistory;
 import diarsid.jdbc.api.ThreadBoundJdbcTransaction;
 import diarsid.jdbc.api.exceptions.ForbiddenTransactionOperation;
 import diarsid.jdbc.api.exceptions.JdbcException;
-import diarsid.jdbc.api.exceptions.JdbcFailureException;
 import diarsid.jdbc.api.exceptions.JdbcPreparedStatementParamsException;
 import diarsid.jdbc.api.exceptions.TransactionTerminationException;
 import diarsid.jdbc.api.sqltable.rows.Row;
 import diarsid.jdbc.api.sqltable.rows.RowGetter;
 import diarsid.jdbc.api.sqltable.rows.RowOperation;
-import diarsid.jdbc.impl.JdbcPreparedStatementSetter;
+import diarsid.jdbc.impl.JdbcImplStaticResources;
 import diarsid.jdbc.impl.SqlConnectionProxyFactory;
-import diarsid.jdbc.impl.conversion.sql2java.SqlTypeToJavaTypeConverter;
 import diarsid.jdbc.impl.sqlhistory.SqlHistoryRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,7 +103,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                 if ( type.equals(resultType) || type.isAssignableFrom(resultType) ) {
                     return (T) result;
                 } else {
-                    return this.tx.sqlTypeToJavaTypeConverter.convert(result, type);
+                    return this.tx.resources.sqlTypeToJavaTypeConverter.convert(result, type);
                 }
             }
             catch (Exception ex) {
@@ -143,8 +141,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
     private final Connection connection;
     private final UUID uuid;
     private final LocalDateTime created;
-    private final JdbcPreparedStatementSetter paramsSetter;
-    private final SqlTypeToJavaTypeConverter sqlTypeToJavaTypeConverter;
+    private final JdbcImplStaticResources resources;
     private final SqlHistoryRecorder sqlHistory;
     private final boolean sqlHistoryEnabled;
     private final boolean replaceParamsInSqlHistory;
@@ -156,15 +153,13 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
     public JdbcTransactionReal(
             Connection connection,
-            JdbcPreparedStatementSetter argsSetter,
-            SqlTypeToJavaTypeConverter sqlTypeToJavaTypeConverter,
+            JdbcImplStaticResources resources,
             boolean sqlHistoryEnabled,
             boolean replaceParamsInSqlHistory) {
         this.connection = connection;
         this.uuid = randomUUID();
         this.created = now();
-        this.paramsSetter = argsSetter;
-        this.sqlTypeToJavaTypeConverter = sqlTypeToJavaTypeConverter;
+        this.resources = resources;
         this.sqlHistoryEnabled = sqlHistoryEnabled;
         this.replaceParamsInSqlHistory = replaceParamsInSqlHistory;
 
@@ -289,7 +284,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         catch (Exception e) {
             this.fail();
             logger.error("cannot close connection: ", e);
-            throw new JdbcFailureException(
+            throw new JdbcException(
                     "It is impossible to close the database connection. " +
                     "Program will be closed");
         }
@@ -402,7 +397,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              ResultSet rs = ps.executeQuery()) {
 
             int resultingRowsQty = this.count(rs);
@@ -437,7 +432,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              ResultSet rs = ps.executeQuery()) {
 
             int resultingRowsQty = this.count(rs);
@@ -486,7 +481,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub0 = this.paramsSetter.setParameters(ps);
+             var stub0 = this.resources.paramsSetter.setParameters(ps);
              var rs = ps.executeQuery();
              var stub1 = this.row.set(rs)) {
 
@@ -522,7 +517,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub0 = this.paramsSetter.setParameters(ps, params);
+             var stub0 = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -558,7 +553,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub0 = this.paramsSetter.setParameters(ps, params);
+             var stub0 = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs);) {
 
@@ -632,7 +627,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -671,7 +666,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -743,7 +738,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps);
+             var stub = this.resources.paramsSetter.setParameters(ps);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -779,7 +774,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -815,7 +810,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -851,7 +846,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps);
+             var stub = this.resources.paramsSetter.setParameters(ps);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -892,7 +887,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -933,7 +928,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(sql);
-             var stub = this.paramsSetter.setParameters(ps, params);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
@@ -1007,7 +1002,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(updateSql);
-             var stub = this.paramsSetter.setParameters(ps, params)) {
+             var stub = this.resources.paramsSetter.setParameters(ps, params)) {
 
             int x = ps.executeUpdate();
 
@@ -1041,7 +1036,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(updateSql);
-             var stub = this.paramsSetter.setParameters(ps, params);) {
+             var stub = this.resources.paramsSetter.setParameters(ps, params);) {
 
             int x = ps.executeUpdate();
 
@@ -1083,7 +1078,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 while ( rs.next() ) {
                     unconvertedKey = rs.getObject(1);
-                    keys.add(this.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                    keys.add(this.resources.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
                 }
             }
 
@@ -1129,7 +1124,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
-             var stub = this.paramsSetter.setParameters(ps, params)) {
+             var stub = this.resources.paramsSetter.setParameters(ps, params)) {
 
             ps.executeUpdate();
 
@@ -1138,7 +1133,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 while ( rs.next() ) {
                     unconvertedKey = rs.getObject(1);
-                    keys.add(this.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                    keys.add(this.resources.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
                 }
             }
 
@@ -1172,7 +1167,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         long start = currentTimeMillis();
 
         try (var ps = this.connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
-             var stub = this.paramsSetter.setParameters(ps, params)) {
+             var stub = this.resources.paramsSetter.setParameters(ps, params)) {
 
             ps.executeUpdate();
 
@@ -1181,7 +1176,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 while ( rs.next() ) {
                     unconvertedKey = rs.getObject(1);
-                    keys.add(this.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                    keys.add(this.resources.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
                 }
             }
 
@@ -1222,7 +1217,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         try (var ps = this.connection.prepareStatement(updateSql)) {
 
             for ( List params : batchParams ) {
-                this.paramsSetter.setParameters(ps, params);
+                this.resources.paramsSetter.setParameters(ps, params);
                 ps.addBatch();
             }           
             int[] x = ps.executeBatch();
@@ -1305,11 +1300,15 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         }
         long start = currentTimeMillis();
 
-        try (var ps = this.connection.prepareStatement(updateSql)) {
+        try (var ps = this.connection.prepareStatement(updateSql);
+             var params = this.resources.paramsPool.give()) {
+
+            params.useWith(ps);
 
             for ( T t : tObjects ) {
-                this.paramsSetter.apply(ps, t, paramsFromT);
+                paramsFromT.apply(t, params);
                 ps.addBatch();
+                params.resetParamIndex();
             }
             int[] x = ps.executeBatch();
 

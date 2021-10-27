@@ -9,6 +9,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -37,6 +38,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static java.lang.String.format;
+import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static java.util.Arrays.asList;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.toList;
@@ -51,8 +53,7 @@ public class JdbcImpl implements Jdbc {
     private final SqlConnectionsSource connectionsSource;
     private final JdbcTransactionGuard transactionGuard;
     private final JdbcTransactionThreadBindingImpl threadBinding;
-    private final JdbcPreparedStatementSetter paramsSetter;
-    private final SqlTypeToJavaTypeConverter sqlTypeToJavaTypeConverter;
+    private final JdbcImplStaticResources resources;
     private final Present<Boolean> sqlHistoryEnabled;
     private final Present<Boolean> replaceSqlParamsInHistory;
 
@@ -66,8 +67,7 @@ public class JdbcImpl implements Jdbc {
         this.connectionsSource = connectionsSource;
         this.transactionGuard = transactionGuard;
         this.threadBinding = new JdbcTransactionThreadBindingImpl(this);
-        this.paramsSetter = paramsSetter;
-        this.sqlTypeToJavaTypeConverter = sqlTypeToJavaTypeConverter;
+        this.resources = new JdbcImplStaticResources(paramsSetter, sqlTypeToJavaTypeConverter);
         this.sqlHistoryEnabled = sqlHistoryEnabled;
         this.replaceSqlParamsInHistory = replaceSqlParamsInHistory;
     }
@@ -243,8 +243,7 @@ public class JdbcImpl implements Jdbc {
 
         JdbcTransactionReal transaction = new JdbcTransactionReal(
                 connection,
-                this.paramsSetter,
-                this.sqlTypeToJavaTypeConverter,
+                this.resources,
                 this.sqlHistoryEnabled.get(),
                 this.replaceSqlParamsInHistory.get());
 
@@ -317,7 +316,7 @@ public class JdbcImpl implements Jdbc {
     private int countQueryResultsStreamed(String sql, Stream params)   {
         try (Connection connection = this.autoCommittableConnection()) {
             PreparedStatement ps = connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
+            this.resources.paramsSetter.setParameters(ps, params);
             ResultSet rs = ps.executeQuery();
             int resultingRowsQty = this.count(rs);
             rs.close();
@@ -379,7 +378,7 @@ public class JdbcImpl implements Jdbc {
     private void doQueryStreamed(RowOperation operation, String sql, Stream params) {
         try (Connection connection = this.autoCommittableConnection()) {
             PreparedStatement ps = connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
+            this.resources.paramsSetter.setParameters(ps, params);
             ResultSet rs = ps.executeQuery();
             Row row = this.wrapResultSetIntoRow(rs);
             while ( rs.next() ) {
@@ -431,7 +430,7 @@ public class JdbcImpl implements Jdbc {
     private <T> Stream<T> doQueryAndStreamStreamed(RowGetter<T> conversion, String sql, Stream params) {
         try (Connection connection = this.autoCommittableConnection()) {
             PreparedStatement ps = connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
+            this.resources.paramsSetter.setParameters(ps, params);
             ResultSet rs = ps.executeQuery();
             Row row = this.wrapResultSetIntoRow(rs);
             Stream.Builder<T> builder = Stream.builder();
@@ -501,7 +500,7 @@ public class JdbcImpl implements Jdbc {
     private void doQueryAndProcessFirstRowStreamed(RowOperation operation, String sql, Stream params) {
         try (Connection connection = this.autoCommittableConnection()) {
             PreparedStatement ps = connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
+            this.resources.paramsSetter.setParameters(ps, params);
             ResultSet rs = ps.executeQuery();
             if ( rs.first() ) {
                 operation.process(this.wrapResultSetIntoRow(rs));
@@ -554,7 +553,7 @@ public class JdbcImpl implements Jdbc {
     private <T> Optional<T> doQueryAndConvertFirstRowStreamed(RowGetter<T> conversion, String sql, Stream params) {
         try (Connection connection = this.autoCommittableConnection()) {
             PreparedStatement ps = connection.prepareStatement(sql);
-            this.paramsSetter.setParameters(ps, params);
+            this.resources.paramsSetter.setParameters(ps, params);
             ResultSet rs = ps.executeQuery();
             Optional<T> optional;
             if ( rs.first() ) {
@@ -596,6 +595,86 @@ public class JdbcImpl implements Jdbc {
     }
 
     @Override
+    public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType) {
+        try (Connection connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS)) {
+
+            ps.executeUpdate();
+
+            List<K> keys = new ArrayList<>();
+            Object unconvertedKey;
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                while ( rs.next() ) {
+                    unconvertedKey = rs.getObject(1);
+                    keys.add(this.resources.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                }
+            }
+
+            return keys;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+            throw new JdbcException(e);
+        }
+    }
+
+    @Override
+    public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType, Object... params) {
+        try (Connection connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
+             var stub = this.resources.paramsSetter.setParameters(ps, params)) {
+
+            ps.executeUpdate();
+
+            List<K> keys = new ArrayList<>();
+            Object unconvertedKey;
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                while ( rs.next() ) {
+                    unconvertedKey = rs.getObject(1);
+                    keys.add(this.resources.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                }
+            }
+
+            return keys;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+            throw new JdbcException(e);
+        }
+    }
+
+    @Override
+    public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType, List params) {
+        try (Connection connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
+             var stub = this.resources.paramsSetter.setParameters(ps, params)) {
+
+            ps.executeUpdate();
+
+            List<K> keys = new ArrayList<>();
+            Object unconvertedKey;
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                while ( rs.next() ) {
+                    unconvertedKey = rs.getObject(1);
+                    keys.add(this.resources.sqlTypeToJavaTypeConverter.convert(unconvertedKey, keyType));
+                }
+            }
+
+            return keys;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+            throw new JdbcException(e);
+        }
+    }
+
+    @Override
     public int doUpdate(String updateSql, Object... params) {
         return this.doUpdateStreamed(updateSql, stream(params));
     }
@@ -603,7 +682,7 @@ public class JdbcImpl implements Jdbc {
     private int doUpdateStreamed(String updateSql, Stream params) {
         try (Connection connection = this.autoCommittableConnection()) {
             PreparedStatement ps = connection.prepareStatement(updateSql);
-            this.paramsSetter.setParameters(ps, params);
+            this.resources.paramsSetter.setParameters(ps, params);
             int x = ps.executeUpdate();
             ps.close();
             return x;
@@ -627,7 +706,7 @@ public class JdbcImpl implements Jdbc {
         try (Connection connection = this.autoCommittableConnection()) {
             PreparedStatement ps = connection.prepareStatement(updateSql);
             for (List list : batchParams) {
-                this.paramsSetter.setParameters(ps, list);
+                this.resources.paramsSetter.setParameters(ps, list);
                 ps.addBatch();
             }
             int[] x = ps.executeBatch();
@@ -677,6 +756,39 @@ public class JdbcImpl implements Jdbc {
         return this.doBatchUpdate(updateSql, args);
     }
 
+    @Override
+    public <T> int[] doBatchUpdate(String updateSql, ParamsApplier<T> paramsFromT, List<T> tObjects) {
+        if ( tObjects.isEmpty() ) {
+            return new int[0];
+        }
+
+        try (var connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(updateSql);
+             var params = this.resources.paramsPool.give()) {
+
+            params.useWith(ps);
+
+            for ( T t : tObjects ) {
+                paramsFromT.apply(t, params);
+                ps.addBatch();
+                params.resetParamIndex();
+            }
+            int[] x = ps.executeBatch();
+
+            return x;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during batch update: ");
+            logger.error(updateSql);
+            logger.error("...with mappable objects: ");
+            for ( T t : tObjects ) {
+                logger.error(t.toString());
+            }
+            logger.error("", e);
+            throw new JdbcException(e);
+        }
+    }
+
     private Row wrapResultSetIntoRow(ResultSet rs) {
         return new Row() {
 
@@ -702,9 +814,7 @@ public class JdbcImpl implements Jdbc {
                     if ( type.equals(resultType) || type.isAssignableFrom(resultType) ) {
                         return (T) result;
                     } else {
-                        return JdbcImpl
-                                .this
-                                .sqlTypeToJavaTypeConverter.convert(result, type);
+                        return JdbcImpl.this.resources.sqlTypeToJavaTypeConverter.convert(result, type);
                     }
                 }
                 catch (Exception ex) {

@@ -20,6 +20,7 @@ import static diarsid.jdbc.api.SqlHistory.Record.Type.COMMENT;
 import static diarsid.jdbc.api.SqlHistory.Record.Type.EXCEPTION;
 import static diarsid.jdbc.api.SqlHistory.Record.Type.QUERY;
 import static diarsid.jdbc.api.SqlHistory.Record.Type.ROLLBACK;
+import static diarsid.support.objects.collections.CollectionUtils.nonEmpty;
 
 public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryRecording, SqlHistory {
 
@@ -147,6 +148,16 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
             }
 
             return asList(argsAsArray);
+        }
+
+        @Override
+        public boolean hasComment() {
+            return nonNull(comment) && nonEmpty(comment);
+        }
+
+        @Override
+        public List<String> comment() {
+            return comment;
         }
 
         @Override

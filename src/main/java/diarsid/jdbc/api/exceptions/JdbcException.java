@@ -1,6 +1,7 @@
 package diarsid.jdbc.api.exceptions;
 
 import java.sql.SQLException;
+
 public class JdbcException extends RuntimeException {
     
     public JdbcException(Exception e) {

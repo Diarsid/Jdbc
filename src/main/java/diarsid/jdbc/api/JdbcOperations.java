@@ -12,20 +12,26 @@ public interface JdbcOperations {
 
     interface ParamsFrom<T> extends Function<T, List<Object>> {
 
-        List<Object> argsFrom(T t);
+        List<Object> paramsFrom(T t);
 
         default List<Object> apply(T t) {
-            return this.argsFrom(t);
+            return this.paramsFrom(t);
         }
 
     }
 
     interface Params {
-        void add(Object param);
+
+        Params addNext(Object param);
+
+        int getNextParamIndex();
+
     }
 
     interface ParamsApplier<T> {
+
         void apply(T t, Params params);
+
     }
 
     void doQuery(
@@ -82,14 +88,14 @@ public interface JdbcOperations {
     int doUpdate(
             String updateSql, List params);
 
-    <T> List<T> doUpdateAndGetKeys(
-            String updateSql, Class<T> keyType);
+    <K> List<K> doUpdateAndGetKeys(
+            String updateSql, Class<K> keyType);
 
-    <T> List<T> doUpdateAndGetKeys(
-            String updateSql, Class<T> keyType, Object... params);
+    <K> List<K> doUpdateAndGetKeys(
+            String updateSql, Class<K> keyType, Object... params);
 
-    <T> List<T> doUpdateAndGetKeys(
-            String updateSql, Class<T> keyType, List params);
+    <K> List<K> doUpdateAndGetKeys(
+            String updateSql, Class<K> keyType, List params);
 
     int[] doBatchUpdate(
             String updateSql, List<List> batchParams);

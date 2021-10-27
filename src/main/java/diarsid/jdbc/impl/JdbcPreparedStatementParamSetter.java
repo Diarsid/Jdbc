@@ -1,6 +1,5 @@
 package diarsid.jdbc.impl;
 
-import java.io.Closeable;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 

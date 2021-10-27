@@ -165,7 +165,7 @@ public class JdbcTransactionTest {
     }
 
     private static void setupTransactionsFactory() {
-        Map<JdbcOption, Object> options = Map.of(TRANSACTION_GUARD_ENABLED, true);
+        Map<JdbcOption, Object> options = Map.of(TRANSACTION_GUARD_ENABLED, false);
         SqlConnectionsSource source = new SqlConnectionsSourceTestBase(TEST_BASE);
         JDBC = Jdbc.init(source, options);
     }
@@ -891,8 +891,8 @@ public class JdbcTransactionTest {
 
         @Override
         public void afterTransactionCommitAndCloseFor(Method method, Object[] args) {
-            assertTrue(JDBC.threadBinding().isBound());
-            assertThat(JDBC.threadBinding().currentTransaction().state(), equalTo(CLOSED_COMMITTED));
+            assertFalse(JDBC.threadBinding().isBound());
+            assertTrue(TEST_BASE.ifAllConnectionsReleased());
             actions.add("afterCommitAndClose");
         }
     }
@@ -905,6 +905,8 @@ public class JdbcTransactionTest {
 
         runnableTx.run();
 
+        runnable.actions.forEach(System.out::println);
+
         assertThat(runnable.actions.size(), equalTo(3));
         assertThat(runnable.actions.get(0), equalTo("beforeOpen"));
         assertThat(runnable.actions.get(1), equalTo("run"));
@@ -914,8 +916,6 @@ public class JdbcTransactionTest {
     static class AwareRunnable2 implements Runnable, TransactionAware {
 
         final List<String> actions = new ArrayList<>();
-
-
 
         @Override
         public void run() {

@@ -10,7 +10,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import diarsid.jdbc.api.exceptions.JdbcFailureException;
+import diarsid.jdbc.api.exceptions.JdbcException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +63,7 @@ public class JdbcTransactionGuardReal implements JdbcTransactionGuard {
                 }
             } catch (Exception ex) {
                 logger.error("cannot teardown connection: ", ex);
-                throw new JdbcFailureException(
+                throw new JdbcException(
                         format("%s cannot tear down JDBC Connection.", 
                                this.getClass().getCanonicalName()));
             }
