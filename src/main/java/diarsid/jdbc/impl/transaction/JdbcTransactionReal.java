@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import static java.lang.String.format;
 import static java.lang.System.currentTimeMillis;
+import static java.lang.System.in;
 import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static java.time.LocalDateTime.now;
 import static java.util.Arrays.asList;
@@ -742,7 +743,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
-            if ( rs.first() ) {
+            if ( rs.next() ) {
                 operation.process(this.row);
             }
 
@@ -778,7 +779,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
-            if ( rs.first() ) {
+            if ( rs.next() ) {
                 operation.process(this.row);
             }
 
@@ -814,7 +815,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
-            if ( rs.first() ) {
+            if ( rs.next() ) {
                 operation.process(this.row);
             }
 
@@ -851,7 +852,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var row = this.row.set(rs)) {
 
             Optional<T> optional;
-            if ( rs.first() ) {
+            if ( rs.next() ) {
                 optional = Optional.ofNullable(conversion.getFrom(this.row));
             } else {
                 optional = empty();
@@ -892,7 +893,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var row = this.row.set(rs)) {
 
             Optional<T> optional;
-            if ( rs.first() ) {
+            if ( rs.next() ) {
                 optional = Optional.ofNullable(conversion.getFrom(this.row));
             } else {
                 optional = empty();
@@ -933,7 +934,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var row = this.row.set(rs)) {
 
             Optional<T> optional;
-            if ( rs.first() ) {
+            if ( rs.next() ) {
                 optional = Optional.ofNullable(conversion.getFrom(this.row));
             } else {
                 optional = empty();
@@ -1021,6 +1022,62 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(updateSql, params, millis);
+                this.sqlHistory.add(e);
+            }
+
+            this.fail();
+            this.rollbackAnd(CLOSE);
+            throw new JdbcException(e);
+        }
+    }
+
+    @Override
+    public <T> int doUpdate(String updateSql, ParamsApplier<T> paramsFromT, T t) {
+        this.mustBeValid();
+        long start = currentTimeMillis();
+
+        try (var ps = this.connection.prepareStatement(updateSql);
+             var params = this.resources.paramsPool.give()) {
+
+            params.useWith(ps);
+
+            paramsFromT.apply(t, params);
+            int x = ps.executeUpdate();
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                this.sqlHistory.add(updateSql, params.interceptedOnLastIteration(), millis);
+            }
+
+            return x;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+
+            if ( this.sqlHistoryEnabled ) {
+                long millis = timeMillisAfter(start);
+                List<Object> intercepted = new ArrayList<>();
+                Params interceptor = new Params() {
+
+                    int index = 1;
+
+                    @Override
+                    public Params addNext(Object param) {
+                        intercepted.add(param);
+                        this.index++;
+                        return null;
+                    }
+
+                    @Override
+                    public int getNextParamIndex() {
+                        return index;
+                    }
+
+                };
+                paramsFromT.apply(t, interceptor);
+                this.sqlHistory.add(updateSql, intercepted, millis);
                 this.sqlHistory.add(e);
             }
 
@@ -1307,8 +1364,11 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             for ( T t : tObjects ) {
                 paramsFromT.apply(t, params);
+//                if ( params.isToSkipCurrent() ) {
+//                    continue;
+//                }
                 ps.addBatch();
-                params.resetParamIndex();
+                params.reset();
             }
             int[] x = ps.executeBatch();
 

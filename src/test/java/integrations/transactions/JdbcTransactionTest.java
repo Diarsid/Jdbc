@@ -369,7 +369,7 @@ public class JdbcTransactionTest {
     }
 
     @Test()
-    public void testDoUpdate_String_paramsMapper() throws Exception {
+    public void testDoBatchUpdate_String_paramsMapper() throws Exception {
         int qtyBefore = TEST_BASE.countRowsInTable("table_1");
         assertEquals(3, qtyBefore);
 
@@ -380,7 +380,7 @@ public class JdbcTransactionTest {
 
         try (var transaction = createTransaction()) {
 
-            transaction.doBatchUpdate(
+            int[] updated = transaction.doBatchUpdate(
                     TABLE_1_INSERT,
                     (model, params) -> {
                         params.addNext(model.id);
@@ -389,11 +389,40 @@ public class JdbcTransactionTest {
                         params.addNext(model.active);
                     },
                     models);
+
+            assertTrue(updated.length == 3);
         }
 
         assertTrue(TEST_BASE.ifAllConnectionsReleased());
         int qtyAfter = TEST_BASE.countRowsInTable("table_1");
         assertEquals(6, qtyAfter);
+    }
+
+    @Test()
+    public void testDoUpdate_String_paramsMapper() throws Exception {
+        int qtyBefore = TEST_BASE.countRowsInTable("table_1");
+        assertEquals(3, qtyBefore);
+
+        Model modelToInsert = new Model(4, "name_4", 40, false);
+
+        try (var transaction = createTransaction()) {
+
+            int updated = transaction.doUpdate(
+                    TABLE_1_INSERT,
+                    (model, params) -> {
+                        params.addNext(model.id);
+                        params.addNext(model.label);
+                        params.addNext(model.index);
+                        params.addNext(model.active);
+                    },
+                    modelToInsert);
+
+            assertEquals(updated, 1);
+        }
+
+        assertTrue(TEST_BASE.ifAllConnectionsReleased());
+        int qtyAfter = TEST_BASE.countRowsInTable("table_1");
+        assertEquals(4, qtyAfter);
     }
     
     @Test()
@@ -633,8 +662,8 @@ public class JdbcTransactionTest {
                                 return (int) row.get("index");
                             },
                             "SELECT * " +
-                                    "FROM table_1 " +
-                                    "WHERE ( label LIKE ? ) AND ( label LIKE ? )",
+                            "FROM table_1 " +
+                            "WHERE ( label LIKE ? ) AND ( label LIKE ? )",
                             "%m%", "%na%")
                     .map(i -> String.valueOf(i) + ": index")
                     .collect(toList());

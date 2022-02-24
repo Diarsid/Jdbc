@@ -9,7 +9,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -575,10 +574,10 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public int doUpdate(String updateSql) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            Statement ps = connection.createStatement();
-            int x = ps.executeUpdate(updateSql);
-            ps.close();
+        try (var connection = this.autoCommittableConnection();
+             var statement = connection.createStatement()) {
+
+            int x = statement.executeUpdate(updateSql);
             return x;
         }
         catch (Exception e) {
@@ -594,9 +593,32 @@ public class JdbcImpl implements Jdbc {
         return this.doUpdateStreamed(updateSql, params.stream());
     }
 
+
+
+    @Override
+    public <T> int doUpdate(String updateSql, ParamsApplier<T> paramsFromT, T t) {
+        try (var connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(updateSql);
+             var params = this.resources.paramsPool.give()) {
+
+            params.useWith(ps);
+
+            paramsFromT.apply(t, params);
+            int x = ps.executeUpdate();
+
+            return x;
+        }
+        catch (Exception e) {
+            logger.error("Exception occurred during update: ");
+            logger.error(updateSql);
+            logger.error("", e);
+            throw new JdbcException(e);
+        }
+    }
+
     @Override
     public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType) {
-        try (Connection connection = this.autoCommittableConnection();
+        try (var connection = this.autoCommittableConnection();
              var ps = connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS)) {
 
             ps.executeUpdate();
@@ -622,7 +644,7 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType, Object... params) {
-        try (Connection connection = this.autoCommittableConnection();
+        try (var connection = this.autoCommittableConnection();
              var ps = connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
              var stub = this.resources.paramsSetter.setParameters(ps, params)) {
 
@@ -649,7 +671,7 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public <K> List<K> doUpdateAndGetKeys(String updateSql, Class<K> keyType, List params) {
-        try (Connection connection = this.autoCommittableConnection();
+        try (var connection = this.autoCommittableConnection();
              var ps = connection.prepareStatement(updateSql, RETURN_GENERATED_KEYS);
              var stub = this.resources.paramsSetter.setParameters(ps, params)) {
 
@@ -680,8 +702,9 @@ public class JdbcImpl implements Jdbc {
     }
 
     private int doUpdateStreamed(String updateSql, Stream params) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            PreparedStatement ps = connection.prepareStatement(updateSql);
+        try (var connection = this.autoCommittableConnection()) {
+
+             var ps = connection.prepareStatement(updateSql);
             this.resources.paramsSetter.setParameters(ps, params);
             int x = ps.executeUpdate();
             ps.close();
@@ -771,7 +794,7 @@ public class JdbcImpl implements Jdbc {
             for ( T t : tObjects ) {
                 paramsFromT.apply(t, params);
                 ps.addBatch();
-                params.resetParamIndex();
+                params.reset();
             }
             int[] x = ps.executeBatch();
 

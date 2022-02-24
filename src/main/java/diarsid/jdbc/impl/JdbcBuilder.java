@@ -1,5 +1,7 @@
 package diarsid.jdbc.impl;
 
+import java.nio.file.Path;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -11,6 +13,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import diarsid.jdbc.api.Jdbc;
 import diarsid.jdbc.api.JdbcOption;
 import diarsid.jdbc.api.SqlConnectionsSource;
+import diarsid.jdbc.api.exceptions.JdbcException;
 import diarsid.jdbc.impl.conversion.sql2java.SqlDoubleToJavaFloatConversion;
 import diarsid.jdbc.impl.conversion.sql2java.SqlTimestampToSqlLocalDateTimeConversion;
 import diarsid.jdbc.impl.conversion.sql2java.SqlTypeToJavaTypeConverter;
@@ -18,6 +21,7 @@ import diarsid.jdbc.impl.transaction.JdbcTransactionGuard;
 import diarsid.jdbc.impl.transaction.JdbcTransactionGuardMock;
 import diarsid.jdbc.impl.transaction.JdbcTransactionGuardReal;
 import diarsid.support.objects.references.References;
+import org.slf4j.LoggerFactory;
 
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
@@ -42,13 +46,24 @@ public class JdbcBuilder {
     private Boolean sqlHistoryParamsReplace;
 
     public JdbcBuilder(SqlConnectionsSource source) {
+        testConnectivity(source);
         this.connectionsSource = source;
         this.options = new HashMap<>();
     }
 
     public JdbcBuilder(SqlConnectionsSource source, Map<JdbcOption, Object> options) {
+        testConnectivity(source);
         this.connectionsSource = source;
         this.options = options;
+    }
+
+    private static void testConnectivity(SqlConnectionsSource source) {
+        try (var connection = source.getConnection()) {
+            LoggerFactory.getLogger(Jdbc.class).info("Connectivity OK");
+        }
+        catch (SQLException e) {
+            throw new JdbcException("Cannot check connectivity");
+        }
     }
 
     public Jdbc build() {

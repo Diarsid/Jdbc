@@ -88,6 +88,9 @@ public interface JdbcOperations {
     int doUpdate(
             String updateSql, List params);
 
+    <T> int doUpdate(
+            String updateSql, ParamsApplier<T> paramsApplier, T t);
+
     <K> List<K> doUpdateAndGetKeys(
             String updateSql, Class<K> keyType);
 

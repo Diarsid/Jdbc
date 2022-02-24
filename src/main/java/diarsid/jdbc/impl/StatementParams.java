@@ -2,6 +2,8 @@ package diarsid.jdbc.impl;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import diarsid.jdbc.api.JdbcOperations;
@@ -11,30 +13,35 @@ import diarsid.support.objects.references.Possible;
 
 import static diarsid.support.objects.references.References.simplePossibleButEmpty;
 
-public class ParamsToStatement extends PooledReusable implements JdbcOperations.Params {
+public class StatementParams extends PooledReusable implements JdbcOperations.Params {
 
     private static final int PREPARED_STATEMENT_FIRST_PARAM_INDEX = 1;
 
     private final JdbcPreparedStatementSetter paramsSetter;
     private final AtomicInteger index;
+    private final List<Object> interceptedParams;
     private final Possible<PreparedStatement> statement;
 
-    public ParamsToStatement(JdbcPreparedStatementSetter paramsSetter) {
+    public StatementParams(JdbcPreparedStatementSetter paramsSetter) {
         super();
-        this.index = new AtomicInteger(PREPARED_STATEMENT_FIRST_PARAM_INDEX);
         this.paramsSetter = paramsSetter;
+        this.index = new AtomicInteger(PREPARED_STATEMENT_FIRST_PARAM_INDEX);
+        this.interceptedParams = new ArrayList<>();
         this.statement = simplePossibleButEmpty();
     }
 
     @Override
     public JdbcOperations.Params addNext(Object param) {
+        PreparedStatement statement = this.statement.orThrow();
         try {
             this.paramsSetter
                     .findAppropriateSetterFor(param)
                     .setParameterInto(
-                            this.statement.orThrow(),
+                            statement,
                             this.index.getAndIncrement(),
                             param);
+
+            this.interceptedParams.add(param);
 
             return this;
         }
@@ -48,18 +55,23 @@ public class ParamsToStatement extends PooledReusable implements JdbcOperations.
         this.statement.resetTo(ps);
     }
 
+    public List<Object> interceptedOnLastIteration() {
+        return interceptedParams;
+    }
+
     @Override
     public int getNextParamIndex() {
         return this.index.get();
     }
 
-    public void resetParamIndex() {
+    public void reset() {
         this.index.set(PREPARED_STATEMENT_FIRST_PARAM_INDEX);
+        this.interceptedParams.clear();
     }
 
     @Override
     protected void clearForReuse() {
-        this.index.set(PREPARED_STATEMENT_FIRST_PARAM_INDEX);
+        this.reset();
         this.statement.nullify();
     }
 }

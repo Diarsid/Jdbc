@@ -1,5 +1,6 @@
 package diarsid.jdbc.api;
 
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -41,6 +42,8 @@ public interface Jdbc extends JdbcOperations, AutoCloseable {
     JdbcTransactionThreadBinding threadBinding();
 
     void change(JdbcOption option, Object value);
+
+//    void executeScript(Path file);
 
     @Override
     void close();
