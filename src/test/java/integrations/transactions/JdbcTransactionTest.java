@@ -8,14 +8,23 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import testing.embedded.base.h2.H2TestDataBase;
+import testing.embedded.base.h2.TestDataBase;
+
 import diarsid.jdbc.api.Jdbc;
-import diarsid.jdbc.api.JdbcOption;
 import diarsid.jdbc.api.JdbcTransaction;
 import diarsid.jdbc.api.SqlConnectionsSource;
 import diarsid.jdbc.api.ThreadBoundJdbcTransaction;
@@ -23,41 +32,29 @@ import diarsid.jdbc.api.TransactionAware;
 import diarsid.jdbc.api.exceptions.ForbiddenTransactionOperation;
 import diarsid.jdbc.api.exceptions.JdbcException;
 import diarsid.jdbc.api.exceptions.TransactionTerminationException;
+import diarsid.jdbc.api.sqltable.columns.Table;
 import diarsid.jdbc.api.sqltable.rows.Row;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import testing.embedded.base.h2.H2TestDataBase;
-import testing.embedded.base.h2.TestDataBase;
+import diarsid.jdbc.api.sqltable.rows.collectors.RowsIterationAware;
 
 import static java.lang.String.format;
 import static java.lang.Thread.sleep;
 import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
 import static diarsid.jdbc.api.Jdbc.WhenNoTransactionThen.IF_NO_TRANSACTION_OPEN_NEW;
-import static diarsid.jdbc.api.JdbcOption.TRANSACTION_GUARD_ENABLED;
-import static diarsid.jdbc.api.JdbcTransaction.State.CLOSED_COMMITTED;
 import static diarsid.jdbc.api.JdbcTransaction.State.FAILED;
 import static diarsid.jdbc.api.JdbcTransaction.State.OPEN;
 import static diarsid.jdbc.api.JdbcTransaction.ThenDo.PROCEED;
 import static diarsid.jdbc.api.JdbcTransaction.ThenDo.THROW;
 import static diarsid.support.configuration.Configuration.configure;
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 
-/**
- *
- * @author Diarsid
- */
 public class JdbcTransactionTest {
 
     static {
@@ -112,19 +109,19 @@ public class JdbcTransactionTest {
     public JdbcTransactionTest() {
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         setupTestBase();
         setupTransactionsFactory();
         setupRequiredTables();    
     }
     
-    @Before
+    @BeforeEach
     public void setUpCase() {
         setupTestData();
     }
     
-    @After
+    @AfterEach
     public void clearCase() {
         clearData();
     }
@@ -174,9 +171,8 @@ public class JdbcTransactionTest {
     }
 
     private static void setupTransactionsFactory() {
-        Map<JdbcOption, Object> options = Map.of(TRANSACTION_GUARD_ENABLED, true);
         SqlConnectionsSource source = new SqlConnectionsSourceTestBase(TEST_BASE);
-        JDBC = Jdbc.init(source, options);
+        JDBC = Jdbc.init(source);
     }
     
     static JdbcTransaction createTransaction() {
@@ -184,9 +180,6 @@ public class JdbcTransactionTest {
         return jdbcTransaction;
     }
 
-    /**
-     * Test of rollbackAndTerminate method, of class JdbcTransactionWrapper.
-     */
     @Test
     public void testRollbackAndTerminate() throws Exception {
         try {
@@ -196,7 +189,7 @@ public class JdbcTransactionTest {
             JdbcTransaction transaction = createTransaction();
             
             int update = transaction.doUpdate(
-                "DELETE FROM table_1 WHERE label IS ? ",
+                "DELETE FROM table_1 WHERE label = ? ",
                 "name_2");
             
             assertEquals(1, update);
@@ -215,9 +208,6 @@ public class JdbcTransactionTest {
         assertEquals(3, qtyAfter);
     }
 
-    /**
-     * Test of doQuery method, of class JdbcTransactionWrapper.
-     */
     @Test
     public void testDoQuery_3args_1() throws Exception {
         JdbcTransaction transaction = createTransaction();
@@ -317,7 +307,9 @@ public class JdbcTransactionTest {
         assertEquals(4, qtyAfter);
     }
     
-    @Test(timeout = 3000)    
+    @Test
+    @Disabled("transaction guard were removed due to incompatibility with ThreadLocal binding logic")
+    @Timeout(3000)
     public void testDoUpdate_String_ObjectArr_not_commited_should_be_teared_down_by_Guard() throws Exception {
         int qtyBefore = TEST_BASE.countRowsInTable("table_1");
         assertEquals(3, qtyBefore);
@@ -635,9 +627,9 @@ public class JdbcTransactionTest {
                             },
                             "SELECT * " +
                             "FROM table_1 " +
-                            "WHERE  ( id IS ? ) AND " +
+                            "WHERE  ( id = ? ) AND " +
                             "       ( label LIKE ? ) AND ( label LIKE ? ) AND ( label LIKE ? ) " +
-                            "       AND ( active IS ? ) ",
+                            "       AND ( active = ? ) ",
                             1, labelPatterns, true)
                     .map(i -> String.valueOf(i) + ": index")
                     .collect(toList());
@@ -710,6 +702,30 @@ public class JdbcTransactionTest {
 
         assertTrue(TEST_BASE.ifAllConnectionsReleased());
     }
+
+    @Test
+    public void getColumnsTest() {
+        Table table = Table.Columns.of("label").add("id").add("index").clearable(false);
+
+        JDBC.doQuery(
+                table,
+                "SELECT * " +
+                "FROM table_1 " +
+                "ORDER BY index ");
+
+        Table.Row row = table.row();
+        while ( row.hasNext() ) {
+            row.next();
+            assertThat(row.get("label", String.class)).isNotNull();
+            assertThat(row.get("id", Integer.class)).isNotNull();
+            assertThat(row.get("index", Integer.class)).isNotNull();
+        }
+
+        assertThat(row.index()).isEqualTo(2);
+        assertThat(table.state()).isEqualTo(RowsIterationAware.State.AFTER_ITERATING);
+        assertEquals(table.iteratedRowsCount(), 3);
+        assertTrue(TEST_BASE.ifAllConnectionsReleased());
+    }
     
     // fix
     @Test
@@ -735,16 +751,15 @@ public class JdbcTransactionTest {
         
         assertFalse(s.isPresent());
     }
-    
+
     @Test
     public void directJdbcUsage() throws Exception {
         List<String> results = new ArrayList<>();
         try (JdbcTransaction transact = createTransaction()) {
-            transact.useJdbcDirectly(
-                    (connection) -> {
+            transact.useJdbcDirectly((connection) -> {
                         PreparedStatement ps = connection.prepareStatement(
                                 "SELECT * FROM table_1 " +
-                                "WHERE ( label LIKE ? ) AND ( id IS ? ) ");
+                                "WHERE ( label LIKE ? ) AND ( id = ? ) ");
                         ps.setString(1, "%ame%");
                         ps.setInt(2, 2);
 
@@ -765,10 +780,8 @@ public class JdbcTransactionTest {
         List<String> results = new ArrayList<>();
 
         try (JdbcTransaction transact = createTransaction()) {
-            transact
-                    .useJdbcDirectly(
-                            (connection) -> {
-                        connection.setAutoCommit(true); // here
+            transact.useJdbcDirectly((connection) -> {
+                connection.setAutoCommit(true); // here
                         fail();
                         PreparedStatement ps = connection.prepareStatement(
                                 "SELECT * FROM table_1 " +
@@ -947,7 +960,7 @@ public class JdbcTransactionTest {
         @Override
         public void run() {
             assertTrue(JDBC.threadBinding().isBound());
-            assertThat(JDBC.threadBinding().currentTransaction().state(), equalTo(OPEN));
+            assertThat(JDBC.threadBinding().currentTransaction().state()).isEqualTo(OPEN);
             actions.add("run");
         }
 
@@ -969,10 +982,10 @@ public class JdbcTransactionTest {
 
         runnable.actions.forEach(System.out::println);
 
-        assertThat(runnable.actions.size(), equalTo(3));
-        assertThat(runnable.actions.get(0), equalTo("beforeOpen"));
-        assertThat(runnable.actions.get(1), equalTo("run"));
-        assertThat(runnable.actions.get(2), equalTo("afterCommitAndClose"));
+        assertThat(runnable.actions.size()).isEqualTo(3);
+        assertThat(runnable.actions.get(0)).isEqualTo("beforeOpen");
+        assertThat(runnable.actions.get(1)).isEqualTo("run");
+        assertThat(runnable.actions.get(2)).isEqualTo("afterCommitAndClose");
     }
 
     static class AwareRunnable2 implements Runnable, TransactionAware {
@@ -982,7 +995,7 @@ public class JdbcTransactionTest {
         @Override
         public void run() {
             assertTrue(JDBC.threadBinding().isBound());
-            assertThat(JDBC.threadBinding().currentTransaction().state(), equalTo(OPEN));
+            assertThat(JDBC.threadBinding().currentTransaction().state()).isEqualTo(OPEN);
             actions.add("run");
         }
     }

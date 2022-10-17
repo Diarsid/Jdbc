@@ -4,7 +4,7 @@ import java.sql.SQLException;
 
 public class JdbcException extends RuntimeException {
     
-    public JdbcException(Exception e) {
+    public JdbcException(Throwable e) {
         super(e);
     }
 

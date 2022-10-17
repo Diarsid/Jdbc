@@ -11,7 +11,7 @@ import diarsid.jdbc.api.sqltable.rows.Row;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
-public class RowsCollectorOneToManyMap<ONE, ONE_ID, MANY, MANY_ID> implements RowCollectorReusable {
+public class RowsCollectorOneToManyMap<ONE, ONE_ID, MANY, MANY_ID> extends AbstractRowsCollector {
 
     private final Map<ONE_ID, ONE> onesByIds;
     private final Map<MANY_ID, MANY> manysByIds;
@@ -38,6 +38,8 @@ public class RowsCollectorOneToManyMap<ONE, ONE_ID, MANY, MANY_ID> implements Ro
 
     @Override
     public void process(Row row) {
+        super.iteratedRowsCount.incrementAndGet();
+
         ONE_ID oneId = getIdOne.apply(row);
         MANY_ID manyId = getIdMany.apply(row);
 
@@ -78,11 +80,6 @@ public class RowsCollectorOneToManyMap<ONE, ONE_ID, MANY, MANY_ID> implements Ro
 
     public Map<ONE, List<MANY>> oneToMany() {
         return this.manyByOne;
-    }
-
-    @Override
-    public boolean isReusable() {
-        return true;
     }
 
     @Override

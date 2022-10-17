@@ -14,6 +14,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import diarsid.jdbc.api.JdbcDirectOperation;
 import diarsid.jdbc.api.JdbcTransaction;
 import diarsid.jdbc.api.SqlHistory;
@@ -28,12 +31,9 @@ import diarsid.jdbc.api.sqltable.rows.RowOperation;
 import diarsid.jdbc.impl.JdbcImplStaticResources;
 import diarsid.jdbc.impl.SqlConnectionProxyFactory;
 import diarsid.jdbc.impl.sqlhistory.SqlHistoryRecorder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static java.lang.String.format;
 import static java.lang.System.currentTimeMillis;
-import static java.lang.System.in;
 import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static java.time.LocalDateTime.now;
 import static java.util.Arrays.asList;
@@ -50,6 +50,8 @@ import static diarsid.jdbc.api.JdbcTransaction.State.FAILED;
 import static diarsid.jdbc.api.JdbcTransaction.State.OPEN;
 import static diarsid.jdbc.api.JdbcTransaction.ThenDo.CLOSE;
 import static diarsid.jdbc.api.JdbcTransaction.ThenDo.PROCEED;
+import static diarsid.jdbc.impl.RowsIteration.whenRowsIterationAwareDoAfter;
+import static diarsid.jdbc.impl.RowsIteration.whenRowsIterationAwareDoBefore;
 import static diarsid.support.time.TimeSupport.timeMillisAfter;
 
 
@@ -80,7 +82,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             try {
                 return rs.getObject(columnLabel);
             }
-            catch (Exception ex) {
+            catch (Throwable ex) {
                 logger.error(format(
                         "Exception occurred during Row processing with column: %s: ", columnLabel));
                 logger.error("", ex);
@@ -107,7 +109,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                     return this.tx.resources.sqlTypeToJavaTypeConverter.convert(result, type);
                 }
             }
-            catch (Exception ex) {
+            catch (Throwable ex) {
                 logger.error(format(
                         "Exception occurred during Row processing with column: %s: ",
                         columnLabel));
@@ -123,7 +125,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             try {
                 return rs.getBytes(columnLabel);
             }
-            catch (Exception ex) {
+            catch (Throwable ex) {
                 logger.error(format(
                         "Exception occurred during Row processing with column: %s: ", columnLabel));
                 logger.error("", ex);
@@ -148,7 +150,6 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
     private final boolean replaceParamsInSqlHistory;
     private final RealRow row;
     private State state;
-    private Runnable delayedTearDownCancel;
 
     public Runnable onCloseCallback;
 
@@ -177,10 +178,6 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
     public void fail() {
         this.state = FAILED;
-    }
-
-    public void set(Runnable delayedTearDownCancel) {
-        this.delayedTearDownCancel = delayedTearDownCancel;
     }
 
     private void mustBeValid() {
@@ -227,7 +224,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                 logger.info("closing attempt: connection has already been closed.");
             }
         }
-        catch (Exception ex) {
+        catch (Throwable ex) {
             logger.error("exception during connection.isClosed()", ex);
             // attempt to commit anyway.
             this.commitAndClose();
@@ -245,18 +242,11 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         return this.state;
     }
 
-    @Override
-    public void doNotGuard() {
-        if ( this.delayedTearDownCancel != null ) {
-            this.delayedTearDownCancel.run();
-        }
-    }
-
-    private void restoreAutoCommit() {
+    private void restoreAutoCommitSafely() {
         try {
             this.connection.setAutoCommit(true);
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             this.fail();
             logger.warn("cannot restore connection autocommit mode: ", e);
             // no actions, just proceed and try to close
@@ -268,7 +258,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         try {
             this.connection.rollback();
         }
-        catch (Exception ex) {
+        catch (Throwable ex) {
             this.fail();
             logger.warn("cannot rollback connection: ", ex);
             // no actions, just proceed and try to close
@@ -282,7 +272,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                 this.connection.close();
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             this.fail();
             logger.error("cannot close connection: ", e);
             throw new JdbcException(
@@ -290,20 +280,11 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                     "Program will be closed");
         }
         finally {
-            try {
-                if ( nonNull(this.delayedTearDownCancel) ) {
-                    this.delayedTearDownCancel.run();
-                }
-            }
-            catch (Exception e) {
-                logger.error("cannot cancel delayed teardown: ", e);
-            }
-
             if ( nonNull(this.onCloseCallback) ) {
                 try {
                     this.onCloseCallback.run();
                 }
-                catch (Exception e) {
+                catch (Throwable e) {
                     logger.error("cannot run on-close-callback: ", e);
                 }
             }
@@ -340,12 +321,12 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                 break;
             case CLOSE:
                 this.state = CLOSED_ROLLBACKED;
-                this.restoreAutoCommit();
+                this.restoreAutoCommitSafely();
                 this.closeConnectionAnyway();
                 break;
             case THROW:
                 this.state = CLOSED_ROLLBACKED;
-                this.restoreAutoCommit();
+                this.restoreAutoCommitSafely();
                 this.closeConnectionAnyway();
                 throw new TransactionTerminationException("transaction has been terminated normally.");
             default:
@@ -375,7 +356,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return resultingRowsQty;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -410,7 +391,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return resultingRowsQty;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -445,7 +426,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return resultingRowsQty;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -462,7 +443,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         }
     }
     
-    private int count(ResultSet rs) throws SQLException {
+    private static int count(ResultSet rs) throws SQLException {
         int count = 0;
         while ( rs.next() ) {            
             count++;
@@ -470,7 +451,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
         return count;
     }
     
-    private String concatenateParams(List<Object> params) {
+    private static String concatenateParams(List<Object> params) {
         return params.stream()
                 .map(Object::toString)
                 .collect(Collectors.joining(", "));
@@ -486,16 +467,20 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var stub1 = this.row.set(rs)) {
 
+            whenRowsIterationAwareDoBefore(operation);
+
             while ( rs.next() ) {
                 operation.process(this.row);
             }
+
+            whenRowsIterationAwareDoAfter(operation);
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(sql, millis);
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -522,16 +507,20 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
+            whenRowsIterationAwareDoBefore(operation);
+
             while ( rs.next() ) {
                 operation.process(this.row);
             }
+
+            whenRowsIterationAwareDoAfter(operation);
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(sql, params, millis);
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -558,16 +547,20 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs);) {
 
+            whenRowsIterationAwareDoBefore(operation);
+
             while ( rs.next() ) {
                 operation.process(this.row);
             }
+
+            whenRowsIterationAwareDoAfter(operation);
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(sql, params, millis);
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -605,7 +598,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return builder.build();
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -644,7 +637,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return builder.build();
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -683,7 +676,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return builder.build();
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -716,7 +709,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                 resource.close();
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error(
                     "Exception occurred during directly performed JDBC operation - " +
                     "exceptiond in AutoCloseable.close(): ");
@@ -743,16 +736,20 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
+            whenRowsIterationAwareDoBefore(operation);
+
             if ( rs.next() ) {
                 operation.process(this.row);
             }
+
+            whenRowsIterationAwareDoAfter(operation);
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(sql, millis);
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -779,16 +776,20 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
+            whenRowsIterationAwareDoBefore(operation);
+
             if ( rs.next() ) {
                 operation.process(this.row);
             }
+
+            whenRowsIterationAwareDoAfter(operation);
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(sql, params, millis);
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -815,16 +816,20 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
              var rs = ps.executeQuery();
              var row = this.row.set(rs)) {
 
+            whenRowsIterationAwareDoBefore(operation);
+
             if ( rs.next() ) {
                 operation.process(this.row);
             }
+
+            whenRowsIterationAwareDoAfter(operation);
 
             if ( this.sqlHistoryEnabled ) {
                 long millis = timeMillisAfter(start);
                 this.sqlHistory.add(sql, params, millis);
             }
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -865,7 +870,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return optional;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -906,7 +911,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return optional;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -947,7 +952,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return optional;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during query: ");
             logger.error(sql);
             logger.error("", e);
@@ -980,7 +985,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return x;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during update: ");
             logger.error(updateSql);
             logger.error("", e);
@@ -1014,7 +1019,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return x;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during update: ");
             logger.error(updateSql);
             logger.error("", e);
@@ -1051,7 +1056,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return x;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during update: ");
             logger.error(updateSql);
             logger.error("", e);
@@ -1104,7 +1109,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return x;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during update: ");
             logger.error(updateSql);
             logger.error("", e);
@@ -1158,7 +1163,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return keys;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during update: ");
             logger.error(updateSql);
             logger.error("", e);
@@ -1201,7 +1206,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return keys;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during update: ");
             logger.error(updateSql);
             logger.error("", e);
@@ -1244,7 +1249,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return keys;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during update: ");
             logger.error(updateSql);
             logger.error("", e);
@@ -1286,7 +1291,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return x;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during batch update: ");
             logger.error(updateSql);
             logger.error("...with params: ");
@@ -1379,7 +1384,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
 
             return x;
         }
-        catch (Exception e) {
+        catch (Throwable e) {
             logger.error("Exception occurred during batch update: ");
             logger.error(updateSql);
             logger.error("...with mappable objects: ");
@@ -1419,7 +1424,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
                 rollbackInsteadOfCommit = true;
             }
         }
-        catch (Exception commitException) {
+        catch (Throwable commitException) {
             this.fail();
             logger.error("Exception occurred during commiting: ");
             logger.error("", commitException);
@@ -1435,7 +1440,7 @@ public class JdbcTransactionReal implements JdbcTransaction, ThreadBoundJdbcTran
             }
         }
         finally {
-            this.restoreAutoCommit();
+            this.restoreAutoCommitSafely();
             this.closeConnectionAnyway();
             if ( this.sqlHistoryEnabled && this.sqlHistory.hasUnreported() ) {
                 logger.info(this.sqlHistory.reportLast());

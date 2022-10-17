@@ -5,7 +5,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +12,9 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import diarsid.jdbc.api.Jdbc;
 import diarsid.jdbc.api.JdbcDirectOperation;
@@ -28,13 +30,10 @@ import diarsid.jdbc.api.sqltable.rows.Row;
 import diarsid.jdbc.api.sqltable.rows.RowGetter;
 import diarsid.jdbc.api.sqltable.rows.RowOperation;
 import diarsid.jdbc.impl.conversion.sql2java.SqlTypeToJavaTypeConverter;
-import diarsid.jdbc.impl.transaction.JdbcTransactionGuard;
 import diarsid.jdbc.impl.transaction.JdbcTransactionReal;
 import diarsid.support.functional.ThrowingConsumer;
 import diarsid.support.functional.ThrowingFunction;
 import diarsid.support.objects.references.Present;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static java.lang.String.format;
 import static java.sql.Statement.RETURN_GENERATED_KEYS;
@@ -44,28 +43,27 @@ import static java.util.stream.Collectors.toList;
 
 import static diarsid.jdbc.api.Jdbc.WhenNoTransactionThen.IF_NO_TRANSACTION_OPEN_NEW;
 import static diarsid.jdbc.api.JdbcTransaction.ThenDo.CLOSE;
+import static diarsid.jdbc.impl.RowsIteration.whenRowsIterationAwareDoAfter;
+import static diarsid.jdbc.impl.RowsIteration.whenRowsIterationAwareDoBefore;
 
 public class JdbcImpl implements Jdbc {
 
     private static final Logger logger = LoggerFactory.getLogger(Jdbc.class);
 
     private final SqlConnectionsSource connectionsSource;
-    private final JdbcTransactionGuard transactionGuard;
-    private final JdbcTransactionThreadBindingImpl threadBinding;
+    private final JdbcTransactionThreadBindingControlImpl threadBinding;
     private final JdbcImplStaticResources resources;
     private final Present<Boolean> sqlHistoryEnabled;
     private final Present<Boolean> replaceSqlParamsInHistory;
 
     public JdbcImpl(
             SqlConnectionsSource connectionsSource,
-            JdbcTransactionGuard transactionGuard,
             JdbcPreparedStatementSetter paramsSetter,
             SqlTypeToJavaTypeConverter sqlTypeToJavaTypeConverter,
             Present<Boolean> sqlHistoryEnabled,
             Present<Boolean> replaceSqlParamsInHistory) {
         this.connectionsSource = connectionsSource;
-        this.transactionGuard = transactionGuard;
-        this.threadBinding = new JdbcTransactionThreadBindingImpl(this);
+        this.threadBinding = new JdbcTransactionThreadBindingControlImpl(this);
         this.resources = new JdbcImplStaticResources(paramsSetter, sqlTypeToJavaTypeConverter);
         this.sqlHistoryEnabled = sqlHistoryEnabled;
         this.replaceSqlParamsInHistory = replaceSqlParamsInHistory;
@@ -73,20 +71,16 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public JdbcTransaction createTransaction() {
+        logger.info("creating transaction");
         if ( this.threadBinding.isBound() ) {
             throw new ForbiddenTransactionOperation(
                     "It is not allowed to nest transactions! Thread bound transaction already exists!");
         }
 
-        try {
-            JdbcTransaction tx = this.createNewTransaction();
-            this.threadBinding.bindExisting(tx);
-            this.setUnbindOnClose(tx);
-            return tx;
-        } catch (SQLException e) {
-            logger.error("SQLException occured during JDBC Connection obtaining: ", e);
-            throw new JdbcException(e);
-        }
+        JdbcTransaction tx = this.createNewTransaction();
+        this.threadBinding.bindExisting(tx);
+        this.setUnbindOnClose(tx);
+        return tx;
     }
 
     private void setUnbindOnClose(JdbcTransaction transaction) {
@@ -113,7 +107,7 @@ public class JdbcImpl implements Jdbc {
             }
             throw exception;
         }
-        catch (Exception exception) {
+        catch (Throwable exception) {
             if ( transaction.state().isOpen() ) {
                 transaction.rollbackAnd(CLOSE);
             }
@@ -144,7 +138,7 @@ public class JdbcImpl implements Jdbc {
             }
             throw exception;
         }
-        catch (Exception exception) {
+        catch (Throwable exception) {
             if ( transaction.state().isOpen() ) {
                 transaction.rollbackAnd(CLOSE);
             }
@@ -219,7 +213,6 @@ public class JdbcImpl implements Jdbc {
                     "%s %s is not changeable!", JdbcOption.class.getSimpleName(), option.name()));
         }
 
-
         option.mustSupportClassOf(value);
 
         switch ( option ) {
@@ -237,7 +230,7 @@ public class JdbcImpl implements Jdbc {
         }
     }
 
-    private JdbcTransaction createNewTransaction() throws SQLException {
+    private JdbcTransaction createNewTransaction() {
         Connection connection = this.transactionConnection();
 
         JdbcTransactionReal transaction = new JdbcTransactionReal(
@@ -245,9 +238,6 @@ public class JdbcImpl implements Jdbc {
                 this.resources,
                 this.sqlHistoryEnabled.get(),
                 this.replaceSqlParamsInHistory.get());
-
-        Runnable tearDown = this.transactionGuard.accept(transaction);
-        transaction.set(tearDown);
 
         return transaction;
     }
@@ -279,19 +269,18 @@ public class JdbcImpl implements Jdbc {
     }
 
     public void close() {
-        this.transactionGuard.stop();
         this.connectionsSource.close();
         logger.info("closed.");
     }
 
     @Override
     public int countQueryResults(String sql) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            Statement statement = connection.createStatement();
-            ResultSet resultSet = statement.executeQuery(sql);
+        try (var connection = this.autoCommittableConnection();
+             var statement = connection.createStatement();
+             var resultSet = statement.executeQuery(sql);) {
+
             int resultingRowsQty = this.count(resultSet);
-            resultSet.close();
-            statement.close();
+
             return resultingRowsQty;
         }
         catch (Exception e) {
@@ -313,13 +302,13 @@ public class JdbcImpl implements Jdbc {
     }
 
     private int countQueryResultsStreamed(String sql, Stream params)   {
-        try (Connection connection = this.autoCommittableConnection()) {
-            PreparedStatement ps = connection.prepareStatement(sql);
-            this.resources.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
+        try (var connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(sql);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();) {
+
             int resultingRowsQty = this.count(rs);
-            rs.close();
-            ps.close();
+
             return resultingRowsQty;
         }
         catch (Exception e) {
@@ -346,15 +335,19 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public void doQuery(RowOperation operation, String sql) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            PreparedStatement ps = connection.prepareStatement(sql);
-            ResultSet rs = ps.executeQuery();
+        try (var connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(sql);
+             var rs = ps.executeQuery();) {
+
             Row row = this.wrapResultSetIntoRow(rs);
+
+            whenRowsIterationAwareDoBefore(operation);
+
             while ( rs.next() ) {
                 operation.process(row);
             }
-            ps.close();
-            rs.close();
+
+            whenRowsIterationAwareDoAfter(operation);
         }
         catch (Exception e) {
             logger.error("Exception occured during query: ");
@@ -375,16 +368,20 @@ public class JdbcImpl implements Jdbc {
     }
 
     private void doQueryStreamed(RowOperation operation, String sql, Stream params) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            PreparedStatement ps = connection.prepareStatement(sql);
-            this.resources.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
+        try (var connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(sql);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();) {
+
+            whenRowsIterationAwareDoBefore(operation);
+
             Row row = this.wrapResultSetIntoRow(rs);
+
             while ( rs.next() ) {
                 operation.process(row);
             }
-            ps.close();
-            rs.close();
+
+            whenRowsIterationAwareDoAfter(operation);
         }
         catch (Exception e) {
             logger.error("Exception occured during query: ");
@@ -396,16 +393,17 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public <T> Stream<T> doQueryAndStream(RowGetter<T> conversion, String sql) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            Statement st = connection.createStatement();
-            ResultSet rs = st.executeQuery(sql);
+        try (var connection = this.autoCommittableConnection();
+             var st = connection.createStatement();
+             var rs = st.executeQuery(sql);) {
+
             Row row = this.wrapResultSetIntoRow(rs);
+
             Stream.Builder<T> builder = Stream.builder();
             while ( rs.next() ) {
                 builder.accept(conversion.getFrom(row));
             }
-            st.close();
-            rs.close();
+
             return builder.build();
         }
         catch (Exception e) {
@@ -450,12 +448,17 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public void useJdbcDirectly(JdbcDirectOperation jdbcOperation) {
-        try (Connection connection = this.autoCommittableConnection()) {
+        try (var connection = this.autoCommittableConnection()) {
             List<AutoCloseable> openedCloseables = new ArrayList<>();
             Connection proxiedConnection = SqlConnectionProxyFactory.createProxy(connection, openedCloseables);
             jdbcOperation.operateJdbcDirectly(proxiedConnection);
             for ( AutoCloseable resource : openedCloseables ) {
-                resource.close();
+                try {
+                    resource.close();
+                }
+                catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         }
         catch (Exception e) {
@@ -469,14 +472,17 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public void doQueryAndProcessFirstRow(RowOperation operation, String sql) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            Statement st = connection.createStatement();
-            ResultSet rs = st.executeQuery(sql);
+        try (var connection = this.autoCommittableConnection();
+             var st = connection.createStatement();
+             var rs = st.executeQuery(sql);) {
+
+            whenRowsIterationAwareDoBefore(operation);
+
             if ( rs.first() ) {
                 operation.process(this.wrapResultSetIntoRow(rs));
             }
-            rs.close();
-            st.close();
+
+            whenRowsIterationAwareDoAfter(operation);
         }
         catch (Exception e) {
             logger.error("Exception occured during query: ");
@@ -497,15 +503,18 @@ public class JdbcImpl implements Jdbc {
     }
 
     private void doQueryAndProcessFirstRowStreamed(RowOperation operation, String sql, Stream params) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            PreparedStatement ps = connection.prepareStatement(sql);
-            this.resources.paramsSetter.setParameters(ps, params);
+        try (var connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(sql);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);) {
+
+            whenRowsIterationAwareDoBefore(operation);
+
             ResultSet rs = ps.executeQuery();
             if ( rs.first() ) {
                 operation.process(this.wrapResultSetIntoRow(rs));
             }
-            rs.close();
-            ps.close();
+
+            whenRowsIterationAwareDoAfter(operation);
         }
         catch (Exception e) {
             logger.error("Exception occured during query: ");
@@ -517,18 +526,19 @@ public class JdbcImpl implements Jdbc {
 
     @Override
     public <T> Optional<T> doQueryAndConvertFirstRow(RowGetter<T> conversion, String sql) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            Statement st = connection.createStatement();
-            ResultSet rs = st.executeQuery(sql);
+        try (var connection = this.autoCommittableConnection();
+             var st = connection.createStatement();
+             var rs = st.executeQuery(sql);) {
+
             Optional<T> optional;
             if ( rs.first() ) {
                 Row row = this.wrapResultSetIntoRow(rs);
                 optional = Optional.ofNullable(conversion.getFrom(row));
-            } else {
+            }
+            else {
                 optional = Optional.empty();
             }
-            rs.close();
-            st.close();
+
             return optional;
         }
         catch (Exception e) {
@@ -550,18 +560,19 @@ public class JdbcImpl implements Jdbc {
     }
 
     private <T> Optional<T> doQueryAndConvertFirstRowStreamed(RowGetter<T> conversion, String sql, Stream params) {
-        try (Connection connection = this.autoCommittableConnection()) {
-            PreparedStatement ps = connection.prepareStatement(sql);
-            this.resources.paramsSetter.setParameters(ps, params);
-            ResultSet rs = ps.executeQuery();
+        try (var connection = this.autoCommittableConnection();
+             var ps = connection.prepareStatement(sql);
+             var stub = this.resources.paramsSetter.setParameters(ps, params);
+             var rs = ps.executeQuery();) {
+
             Optional<T> optional;
             if ( rs.first() ) {
                 optional = Optional.ofNullable(conversion.getFrom(this.wrapResultSetIntoRow(rs)));
-            } else {
+            }
+            else {
                 optional = Optional.empty();
             }
-            rs.close();
-            ps.close();
+
             return optional;
         }
         catch (Exception e) {

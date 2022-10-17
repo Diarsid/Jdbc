@@ -30,14 +30,14 @@ public class SqlTypeToJavaTypeConverter {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public <J> J convert(Object obj, Class<J> javaType) {
+    public <JAVA> JAVA convert(Object obj, Class<JAVA> javaType) {
         SqlTypeToJavaTypeConversion conversion = this.getConversion(obj.getClass(), javaType);
 
-        return (J) conversion.convert(obj);
+        return (JAVA) conversion.convert(obj);
     }
 
     @SuppressWarnings("rawtypes")
-    public <S, J> SqlTypeToJavaTypeConversion getConversion(Class<S> sqlType, Class<J> javaType) {
+    public <SQL, JAVA> SqlTypeToJavaTypeConversion getConversion(Class<SQL> sqlType, Class<JAVA> javaType) {
         Map<Class, SqlTypeToJavaTypeConversion> sqlTypeConversions = this.conversions.get(javaType);
 
         if ( isNull(sqlTypeConversions) ) {

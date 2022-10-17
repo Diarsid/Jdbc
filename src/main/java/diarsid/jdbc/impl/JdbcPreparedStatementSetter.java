@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import diarsid.jdbc.api.exceptions.ForbiddenTransactionOperation;
@@ -38,6 +39,7 @@ public class JdbcPreparedStatementSetter {
     public JdbcPreparedStatementSetter(
             List<JdbcPreparedStatementParamSetter> additionalSetters) {
         Set<JdbcPreparedStatementParamSetter> defaultSetters = new HashSet<>();
+
         defaultSetters.add(new ParamSetterNull());
         defaultSetters.add(new ParamSetterString());
         defaultSetters.add(new ParamSetterBool());
@@ -71,104 +73,126 @@ public class JdbcPreparedStatementSetter {
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3, Object param4) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
-        this.findAppropriateSetterFor(param4).setParameterInto(statement, 4, param4);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
+        this.setParameterUsingIncrementedIndex(statement, index, param4);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3, Object param4, Object param5) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
-        this.findAppropriateSetterFor(param4).setParameterInto(statement, 4, param4);
-        this.findAppropriateSetterFor(param5).setParameterInto(statement, 5, param5);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
+        this.setParameterUsingIncrementedIndex(statement, index, param4);
+        this.setParameterUsingIncrementedIndex(statement, index, param5);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3, Object param4, Object param5, Object param6) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
-        this.findAppropriateSetterFor(param4).setParameterInto(statement, 4, param4);
-        this.findAppropriateSetterFor(param5).setParameterInto(statement, 5, param5);
-        this.findAppropriateSetterFor(param6).setParameterInto(statement, 6, param6);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
+        this.setParameterUsingIncrementedIndex(statement, index, param4);
+        this.setParameterUsingIncrementedIndex(statement, index, param5);
+        this.setParameterUsingIncrementedIndex(statement, index, param6);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3, Object param4, Object param5, Object param6, Object param7) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
-        this.findAppropriateSetterFor(param4).setParameterInto(statement, 4, param4);
-        this.findAppropriateSetterFor(param5).setParameterInto(statement, 5, param5);
-        this.findAppropriateSetterFor(param6).setParameterInto(statement, 6, param6);
-        this.findAppropriateSetterFor(param7).setParameterInto(statement, 7, param7);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
+        this.setParameterUsingIncrementedIndex(statement, index, param4);
+        this.setParameterUsingIncrementedIndex(statement, index, param5);
+        this.setParameterUsingIncrementedIndex(statement, index, param6);
+        this.setParameterUsingIncrementedIndex(statement, index, param7);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3, Object param4, Object param5, Object param6, Object param7, Object param8) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
-        this.findAppropriateSetterFor(param4).setParameterInto(statement, 4, param4);
-        this.findAppropriateSetterFor(param5).setParameterInto(statement, 5, param5);
-        this.findAppropriateSetterFor(param6).setParameterInto(statement, 6, param6);
-        this.findAppropriateSetterFor(param7).setParameterInto(statement, 7, param7);
-        this.findAppropriateSetterFor(param8).setParameterInto(statement, 8, param8);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
+        this.setParameterUsingIncrementedIndex(statement, index, param4);
+        this.setParameterUsingIncrementedIndex(statement, index, param5);
+        this.setParameterUsingIncrementedIndex(statement, index, param6);
+        this.setParameterUsingIncrementedIndex(statement, index, param7);
+        this.setParameterUsingIncrementedIndex(statement, index, param8);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3, Object param4, Object param5, Object param6, Object param7, Object param8, Object param9) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
-        this.findAppropriateSetterFor(param4).setParameterInto(statement, 4, param4);
-        this.findAppropriateSetterFor(param5).setParameterInto(statement, 5, param5);
-        this.findAppropriateSetterFor(param6).setParameterInto(statement, 6, param6);
-        this.findAppropriateSetterFor(param7).setParameterInto(statement, 7, param7);
-        this.findAppropriateSetterFor(param9).setParameterInto(statement, 9, param9);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
+        this.setParameterUsingIncrementedIndex(statement, index, param4);
+        this.setParameterUsingIncrementedIndex(statement, index, param5);
+        this.setParameterUsingIncrementedIndex(statement, index, param6);
+        this.setParameterUsingIncrementedIndex(statement, index, param7);
+        this.setParameterUsingIncrementedIndex(statement, index, param8);
+        this.setParameterUsingIncrementedIndex(statement, index, param9);
 
         return CloseableStub.INSTANCE;
     }
 
     public Closeable setParameters(PreparedStatement statement, Object param1, Object param2, Object param3, Object param4, Object param5, Object param6, Object param7, Object param8, Object param9, Object param10) throws SQLException {
-        this.findAppropriateSetterFor(param1).setParameterInto(statement, 1, param1);
-        this.findAppropriateSetterFor(param2).setParameterInto(statement, 2, param2);
-        this.findAppropriateSetterFor(param3).setParameterInto(statement, 3, param3);
-        this.findAppropriateSetterFor(param4).setParameterInto(statement, 4, param4);
-        this.findAppropriateSetterFor(param5).setParameterInto(statement, 5, param5);
-        this.findAppropriateSetterFor(param6).setParameterInto(statement, 6, param6);
-        this.findAppropriateSetterFor(param7).setParameterInto(statement, 7, param7);
-        this.findAppropriateSetterFor(param9).setParameterInto(statement, 9, param9);
-        this.findAppropriateSetterFor(param10).setParameterInto(statement, 10, param10);
+        AtomicInteger index = new AtomicInteger(1);
+
+        this.setParameterUsingIncrementedIndex(statement, index, param1);
+        this.setParameterUsingIncrementedIndex(statement, index, param2);
+        this.setParameterUsingIncrementedIndex(statement, index, param3);
+        this.setParameterUsingIncrementedIndex(statement, index, param4);
+        this.setParameterUsingIncrementedIndex(statement, index, param5);
+        this.setParameterUsingIncrementedIndex(statement, index, param6);
+        this.setParameterUsingIncrementedIndex(statement, index, param7);
+        this.setParameterUsingIncrementedIndex(statement, index, param8);
+        this.setParameterUsingIncrementedIndex(statement, index, param9);
+        this.setParameterUsingIncrementedIndex(statement, index, param10);
 
         return CloseableStub.INSTANCE;
     }
@@ -249,5 +273,32 @@ public class JdbcPreparedStatementSetter {
         throw new JdbcPreparedStatementParamsException(
                 "appropriate ParamsSetter not found for class: " +
                         obj.getClass().getCanonicalName());
+    }
+
+    private Closeable setParameterUsingIncrementedIndex(
+            PreparedStatement statement, AtomicInteger index, Object param)
+            throws SQLException {
+        if ( param instanceof Collection ) {
+            Collection nestedParams = (Collection) param;
+            for ( Object nestedParam : nestedParams ) {
+                if ( nestedParam instanceof Collection || nestedParam instanceof Object[] ) {
+                    throw new ForbiddenTransactionOperation("Params nested more than one level are not supported");
+                }
+                this.findAppropriateSetterFor(param).setParameterAndIncrementIndexInto(statement, index, nestedParam);
+            }
+        }
+        else if ( param instanceof Object[] ) {
+            Object[] nestedParams = (Object[]) param;
+            for ( Object nestedParam : nestedParams ) {
+                if ( nestedParam instanceof Collection || nestedParam instanceof Object[] ) {
+                    throw new ForbiddenTransactionOperation("Params nested more than one level are not supported");
+                }
+                this.findAppropriateSetterFor(param).setParameterAndIncrementIndexInto(statement, index, nestedParam);
+            }
+        }
+        else {
+            this.findAppropriateSetterFor(param).setParameterAndIncrementIndexInto(statement, index, param);
+        }
+        return CloseableStub.INSTANCE;
     }
 }

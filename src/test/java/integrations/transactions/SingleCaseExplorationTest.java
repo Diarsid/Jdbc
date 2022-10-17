@@ -15,10 +15,10 @@ import java.util.Map;
 
 import diarsid.jdbc.api.Jdbc;
 import diarsid.jdbc.api.JdbcOption;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,10 +30,7 @@ import diarsid.jdbc.api.JdbcTransaction;
 
 import static java.util.stream.Collectors.toList;
 
-import static diarsid.jdbc.api.JdbcOption.TRANSACTION_GUARD_ENABLED;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  *
@@ -75,19 +72,19 @@ public class SingleCaseExplorationTest {
     public SingleCaseExplorationTest() {
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         setupTestBase();
         setupTransactionsFactory();
         setupRequiredTables();    
     }
     
-    @Before
+    @BeforeEach
     public void setUpCase() {
         setupTestData();
     }
     
-    @After
+    @AfterEach
     public void clearCase() {
         clearData();
     }
@@ -137,9 +134,8 @@ public class SingleCaseExplorationTest {
     }
 
     private static void setupTransactionsFactory() {
-        Map<JdbcOption, Object> options = Map.of(TRANSACTION_GUARD_ENABLED, true);
         SqlConnectionsSource source = new SqlConnectionsSourceTestBase(TEST_BASE);
-        JDBC = Jdbc.init(source, options);
+        JDBC = Jdbc.init(source);
     }
     
     static JdbcTransaction createTransaction() {

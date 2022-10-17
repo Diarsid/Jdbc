@@ -3,7 +3,6 @@ package diarsid.jdbc.api;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ScheduledExecutorService;
 
 import diarsid.jdbc.api.exceptions.JdbcException;
 import diarsid.jdbc.impl.JdbcPreparedStatementSetter;
@@ -19,20 +18,6 @@ public enum JdbcOption implements CommonEnum<JdbcOption> {
             Collection.class,
             List.class,
             Set.class),
-
-    TRANSACTION_GUARD_ENABLED(
-            false,
-            boolean.class,
-            Boolean.class),
-
-    TRANSACTION_GUARD_DELAY_IN_MS(
-            false,
-            Integer.class,
-            Long.class),
-
-    TRANSACTION_GUARD_SCHEDULER(
-            false,
-            ScheduledExecutorService.class),
 
     SQL_HISTORY_ENABLED(
             true,

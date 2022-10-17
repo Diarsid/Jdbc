@@ -1,14 +1,13 @@
 package diarsid.jdbc.impl;
 
-import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
+
+import org.slf4j.LoggerFactory;
 
 import diarsid.jdbc.api.Jdbc;
 import diarsid.jdbc.api.JdbcOption;
@@ -17,11 +16,7 @@ import diarsid.jdbc.api.exceptions.JdbcException;
 import diarsid.jdbc.impl.conversion.sql2java.SqlDoubleToJavaFloatConversion;
 import diarsid.jdbc.impl.conversion.sql2java.SqlTimestampToSqlLocalDateTimeConversion;
 import diarsid.jdbc.impl.conversion.sql2java.SqlTypeToJavaTypeConverter;
-import diarsid.jdbc.impl.transaction.JdbcTransactionGuard;
-import diarsid.jdbc.impl.transaction.JdbcTransactionGuardMock;
-import diarsid.jdbc.impl.transaction.JdbcTransactionGuardReal;
 import diarsid.support.objects.references.References;
-import org.slf4j.LoggerFactory;
 
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
@@ -29,17 +24,12 @@ import static java.util.Objects.nonNull;
 import static diarsid.jdbc.api.JdbcOption.JDBC_PREPARED_STATEMENT_SETTERS;
 import static diarsid.jdbc.api.JdbcOption.SQL_HISTORY_ENABLED;
 import static diarsid.jdbc.api.JdbcOption.SQL_HISTORY_PARAMS_REPLACE;
-import static diarsid.jdbc.api.JdbcOption.TRANSACTION_GUARD_DELAY_IN_MS;
-import static diarsid.jdbc.api.JdbcOption.TRANSACTION_GUARD_ENABLED;
-import static diarsid.jdbc.api.JdbcOption.TRANSACTION_GUARD_SCHEDULER;
-import static diarsid.support.lang.Booleans.not;
 
 public class JdbcBuilder {
 
     private final SqlConnectionsSource connectionsSource;
     private final Map<JdbcOption, Object> options;
 
-    private JdbcTransactionGuard jdbcTransactionGuard;
     private List<JdbcPreparedStatementParamSetter> additionalSetters;
     private JdbcPreparedStatementSetter setter;
     private Boolean sqlHistoryEnabled;
@@ -67,7 +57,6 @@ public class JdbcBuilder {
     }
 
     public Jdbc build() {
-        this.configureTransactionGuard();
         this.configurePreparedStatementSetter();
         this.configureSqlLogger();
         this.configureIfSqlHistoryEnabled();
@@ -79,29 +68,10 @@ public class JdbcBuilder {
 
         return new JdbcImpl(
                 this.connectionsSource,
-                this.jdbcTransactionGuard,
                 this.setter,
                 typesConverter,
                 References.simplePresentOf(this.sqlHistoryEnabled),
                 References.simplePresentOf(this.sqlHistoryParamsReplace));
-    }
-
-    private void configureTransactionGuard() {
-        boolean enabled = this.getOptionOr(TRANSACTION_GUARD_ENABLED, Boolean.class, false);
-
-        if ( not(enabled) ) {
-            this.jdbcTransactionGuard = new JdbcTransactionGuardMock();
-        }
-        else {
-            int msDelay = this.getOptionOr(TRANSACTION_GUARD_DELAY_IN_MS, Integer.class, 2000);
-            ScheduledExecutorService scheduler = this.getOptionOr(
-                    TRANSACTION_GUARD_SCHEDULER, ScheduledExecutorService.class, null);
-            if ( isNull(scheduler) ) {
-                scheduler = new ScheduledThreadPoolExecutor(10);
-            }
-
-            this.jdbcTransactionGuard = new JdbcTransactionGuardReal(msDelay, scheduler);
-        }
     }
 
     private void configurePreparedStatementSetter() {

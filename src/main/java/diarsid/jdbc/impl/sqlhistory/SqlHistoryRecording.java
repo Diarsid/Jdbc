@@ -24,7 +24,7 @@ public interface SqlHistoryRecording {
 
     void addBatchMappable(String sql, List<? extends Object> objects, long millis);
 
-    void add(Exception e);
+    void add(Throwable e);
 
     void addRollback(long millis);
 }

@@ -228,23 +228,23 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
         }
     }
 
-    static class SqlHistoryException implements Record {
+    static class SqlHistoryThrowable implements Record {
 
         private final int index;
-        private final Exception exception;
+        private final Throwable throwable;
 
-        public SqlHistoryException(int index, Exception exception) {
+        public SqlHistoryThrowable(int index, Throwable throwable) {
             this.index = index;
-            this.exception = exception;
+            this.throwable = throwable;
         }
 
-        public Exception exception() {
-            return exception;
+        public Throwable throwable() {
+            return throwable;
         }
 
         @Override
         public String string() {
-            return exception.toString();
+            return throwable.toString();
         }
 
         @Override
@@ -354,8 +354,8 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
     }
 
     @Override
-    public void add(Exception e) {
-        SqlHistoryException exception = new SqlHistoryException(this.records.size(), e);
+    public void add(Throwable e) {
+        SqlHistoryThrowable exception = new SqlHistoryThrowable(this.records.size(), e);
         this.records.add(exception);
     }
 
@@ -427,7 +427,7 @@ public class SqlHistoryRecorder extends PooledReusable implements SqlHistoryReco
                     reportMaker.addComment(record.string(), record.millis());
                     break;
                 case EXCEPTION:
-                    reportMaker.add(((SqlHistoryException) record).exception());
+                    reportMaker.add(((SqlHistoryThrowable) record).throwable());
                     break;
                 default:
                     throw type.unsupported();

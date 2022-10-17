@@ -12,7 +12,7 @@ import diarsid.support.functional.TripleFunction;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
-public class RowsCollectorOneToManyRelationsList<RELATION, ONE, ONE_ID, MANY, MANY_ID> implements RowCollectorReusable {
+public class RowsCollectorOneToManyRelationsList<RELATION, ONE, ONE_ID, MANY, MANY_ID> extends AbstractRowsCollector {
 
     private final Map<ONE_ID, ONE> onesByIds;
     private final Map<MANY_ID, MANY> manysByIds;
@@ -44,6 +44,8 @@ public class RowsCollectorOneToManyRelationsList<RELATION, ONE, ONE_ID, MANY, MA
 
     @Override
     public void process(Row row) {
+        super.iteratedRowsCount.incrementAndGet();
+
         ONE_ID oneId = getIdOne.apply(row);
 
         ONE one = onesByIds.get(oneId);
@@ -70,11 +72,6 @@ public class RowsCollectorOneToManyRelationsList<RELATION, ONE, ONE_ID, MANY, MA
 
     public List<RELATION> relations() {
         return new ArrayList<>(relations);
-    }
-
-    @Override
-    public boolean isReusable() {
-        return true;
     }
 
     @Override

@@ -1,5 +1,8 @@
 package diarsid.jdbc.impl;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import diarsid.jdbc.api.Jdbc;
 import diarsid.jdbc.api.JdbcTransaction;
 import diarsid.jdbc.api.ThreadBoundJdbcTransaction;
@@ -15,42 +18,42 @@ import static diarsid.jdbc.api.JdbcTransaction.State.CLOSED_ROLLBACKED;
 import static diarsid.jdbc.api.JdbcTransaction.State.FAILED;
 import static diarsid.jdbc.api.JdbcTransaction.State.OPEN;
 import static diarsid.jdbc.api.JdbcTransaction.ThenDo.CLOSE;
-import static diarsid.jdbc.impl.TransactionalProxy.TransactionJoining.CREATED_NEW;
-import static diarsid.jdbc.impl.TransactionalProxy.TransactionJoining.JOINED_TO_EXISTING;
 
-public class JdbcTransactionThreadBindingImpl implements JdbcTransactionThreadBindingControl {
+public class JdbcTransactionThreadBindingControlImpl implements JdbcTransactionThreadBindingControl {
+
+    private static final Logger log = LoggerFactory.getLogger(JdbcTransactionThreadBindingControlImpl.class);
 
     private final ThreadLocal<JdbcTransactionReal> threadJdbcTransactions;
     private final Jdbc jdbc;
 
-    public JdbcTransactionThreadBindingImpl(Jdbc jdbc) {
+    public JdbcTransactionThreadBindingControlImpl(Jdbc jdbc) {
         this.jdbc = jdbc;
         this.threadJdbcTransactions = new ThreadLocal<>();
     }
 
-    private TransactionalProxy.TransactionJoining joinExistingTransactionOr(Jdbc.WhenNoTransactionThen then) {
-        JdbcTransactionReal transaction = threadJdbcTransactions.get();
-        TransactionalProxy.TransactionJoining joining;
-
-        if ( isNull(transaction) ) {
-            switch ( then ) {
-                case IF_NO_TRANSACTION_THROW:
-                    throw new JdbcException("There is no open transaction!");
-                case IF_NO_TRANSACTION_OPEN_NEW:
-                    transaction = (JdbcTransactionReal) jdbc.createTransaction();
-                    threadJdbcTransactions.set(transaction);
-                    joining = CREATED_NEW;
-                    break;
-                default:
-                    throw new UnsupportedOperationException();
-            }
-        }
-        else {
-            joining = JOINED_TO_EXISTING;
-        }
-
-        return joining;
-    }
+//    private TransactionalProxy.TransactionJoining joinExistingTransactionOr(Jdbc.WhenNoTransactionThen then) {
+//        JdbcTransactionReal transaction = threadJdbcTransactions.get();
+//        TransactionalProxy.TransactionJoining joining;
+//
+//        if ( isNull(transaction) ) {
+//            switch ( then ) {
+//                case IF_NO_TRANSACTION_THROW:
+//                    throw new JdbcException("There is no open transaction!");
+//                case IF_NO_TRANSACTION_OPEN_NEW:
+//                    transaction = (JdbcTransactionReal) jdbc.createTransaction();
+//                    threadJdbcTransactions.set(transaction);
+//                    joining = CREATED_NEW;
+//                    break;
+//                default:
+//                    throw new UnsupportedOperationException();
+//            }
+//        }
+//        else {
+//            joining = JOINED_TO_EXISTING;
+//        }
+//
+//        return joining;
+//    }
 
     @Override
     public ThreadBoundJdbcTransaction currentTransaction() {

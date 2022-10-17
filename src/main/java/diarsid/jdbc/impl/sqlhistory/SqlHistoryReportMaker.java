@@ -82,10 +82,10 @@ public class SqlHistoryReportMaker {
                 .append(LINE_SEPARATOR);
     }
 
-    public void add(Exception e) {
+    public void add(Throwable e) {
         this.addCounter();
         this.historyBuilder
-                .append("[EXCEPTION] ")
+                .append("[THROWABLE] ")
                 .append(e.getClass().getCanonicalName())
                 .append(" : ")
                 .append(e.getMessage())

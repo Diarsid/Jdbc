@@ -13,7 +13,7 @@ import diarsid.jdbc.api.sqltable.rows.Row;
 import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 
-public class RowsCollectorOneToManyOnesManyAdding<ONE, ONE_ID, MANY, MANY_ID> implements RowCollectorReusable {
+public class RowsCollectorOneToManyOnesManyAdding<ONE, ONE_ID, MANY, MANY_ID> extends AbstractRowsCollector {
 
     private final List<ONE> ones;
     private final Map<ONE_ID, ONE> onesByIds;
@@ -43,6 +43,8 @@ public class RowsCollectorOneToManyOnesManyAdding<ONE, ONE_ID, MANY, MANY_ID> im
 
     @Override
     public void process(Row row) {
+        super.iteratedRowsCount.incrementAndGet();
+
         ONE_ID oneId = getIdOne.apply(row);
         MANY_ID manyId = getIdMany.apply(row);
 
@@ -86,11 +88,6 @@ public class RowsCollectorOneToManyOnesManyAdding<ONE, ONE_ID, MANY, MANY_ID> im
 
     public List<ONE> ones() {
         return new ArrayList<>(this.ones);
-    }
-
-    @Override
-    public boolean isReusable() {
-        return true;
     }
 
     @Override
